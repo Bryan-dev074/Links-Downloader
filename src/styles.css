@@ -424,6 +424,19 @@ a:focus-visible {
   transition: width 260ms ease, height 260ms ease;
 }
 
+.sprite-stage[data-sprite-asset='knights-campfire'] .sprite-image {
+  width: min(82vw, 310px);
+  height: 174px;
+}
+
+.sprite-stage[data-sprite-asset='knights-campfire'] .sprite-portal {
+  opacity: 0;
+}
+
+.sprite-stage[data-sprite-asset='sonic-ready'] .sprite-image {
+  mix-blend-mode: screen;
+}
+
 .sprite-stage[data-sprite-theme='shadow'] .sprite-image {
   filter:
     brightness(1.24)

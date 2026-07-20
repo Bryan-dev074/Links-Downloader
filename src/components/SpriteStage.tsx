@@ -18,16 +18,16 @@ const STATE_LABELS: Record<StageState, string> = {
 
 const THEME_ASSETS: Record<SpriteTheme, Record<StageState, string>> = {
   knights: {
-    idle: 'idle',
-    ready: 'ready',
+    idle: 'knights-campfire',
+    ready: 'knights-ready',
     loading: 'loading',
     success: 'success',
-    error: 'idle',
+    error: 'knights-campfire',
   },
   sonic: {
     idle: 'sonic-idle',
-    ready: 'sonic-success',
-    loading: 'sonic-loading',
+    ready: 'sonic-ready',
+    loading: 'sonic-roll',
     success: 'sonic-success',
     error: 'sonic-idle',
   },
@@ -52,7 +52,11 @@ export function SpriteStage({ state, compact = false }: SpriteStageProps) {
   const src = `${import.meta.env.BASE_URL}assets/${asset}.${extension}`
 
   return (
-    <div className={`sprite-stage${compact ? ' is-compact' : ''}`} data-sprite-theme={PAGE_SPRITE_THEME}>
+    <div
+      className={`sprite-stage${compact ? ' is-compact' : ''}`}
+      data-sprite-theme={PAGE_SPRITE_THEME}
+      data-sprite-asset={asset}
+    >
       <div className="sprite-portal" aria-hidden="true" />
       <img key={`${PAGE_SPRITE_THEME}-${state}-${extension}`} className="sprite-image" src={src} alt="" />
       <span className={`sprite-status is-${state}`} role="status" aria-live="polite">

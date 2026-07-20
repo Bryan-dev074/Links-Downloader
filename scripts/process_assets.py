@@ -15,6 +15,7 @@ from __future__ import annotations
 from collections import Counter, deque
 from dataclasses import dataclass
 from pathlib import Path
+from shutil import copyfile
 from typing import Iterable
 import xml.etree.ElementTree as ET
 
@@ -42,6 +43,8 @@ class AnimationSpec:
     source_name: str
     remove_solid_background: bool
     minimum_border_dominance: float = 0.90
+    square_canvas: bool = True
+    passthrough: bool = False
 
 
 ANIMATIONS = (
@@ -49,7 +52,17 @@ ANIMATIONS = (
     AnimationSpec("ready.gif", "descarga (3).gif", True),
     AnimationSpec("loading.gif", "descarga.gif", True),
     AnimationSpec("success.gif", "descarga (1).gif", True),
+    AnimationSpec(
+        "knights-campfire.gif",
+        "img_00770e07c789.gif",
+        False,
+        square_canvas=False,
+        passthrough=True,
+    ),
+    AnimationSpec("knights-ready.gif", "img_4029e7269913.gif", False),
     AnimationSpec("sonic-idle.gif", "sonic chos!.gif", True),
+    AnimationSpec("sonic-ready.gif", "img_d23845b5bbf1.gif", False),
+    AnimationSpec("sonic-roll.gif", "img_5042e3d6757e.gif", False),
     AnimationSpec("sonic-loading.gif", "descarga (4).gif", True),
     AnimationSpec(
         "sonic-success.gif",
@@ -189,17 +202,27 @@ def _union_bbox(frames: Iterable[Image.Image]) -> tuple[int, int, int, int]:
     )
 
 
-def _square_normalize(frames: list[Image.Image]) -> list[Image.Image]:
+def _canvas_normalize(
+    frames: list[Image.Image],
+    square_canvas: bool = True,
+) -> list[Image.Image]:
     left, top, right, bottom = _union_bbox(frames)
     content_width = right - left
     content_height = bottom - top
-    side = _round_up(max(content_width, content_height) + PADDING * 2, CANVAS_STEP)
-    offset_x = (side - content_width) // 2 - left
-    offset_y = (side - content_height) // 2 - top
+    if square_canvas:
+        side = _round_up(max(content_width, content_height) + PADDING * 2, CANVAS_STEP)
+        canvas_size = (side, side)
+    else:
+        canvas_size = (
+            _round_up(content_width + PADDING * 2, CANVAS_STEP),
+            _round_up(content_height + PADDING * 2, CANVAS_STEP),
+        )
+    offset_x = (canvas_size[0] - content_width) // 2 - left
+    offset_y = (canvas_size[1] - content_height) // 2 - top
 
     normalized: list[Image.Image] = []
     for frame in frames:
-        canvas = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+        canvas = Image.new("RGBA", canvas_size, (0, 0, 0, 0))
         canvas.alpha_composite(frame, (offset_x, offset_y))
         normalized.append(canvas)
     return normalized
@@ -262,37 +285,45 @@ def build_animation(spec: AnimationSpec) -> dict[str, object]:
     frames, durations, loop = _load_frames(source)
     backgrounds: set[tuple[int, int, int]] = set()
     removed_pixels = 0
-    processed: list[Image.Image] = []
-    for frame in frames:
-        if spec.remove_solid_background:
-            frame, background, removed = remove_border_connected_background(
-                frame,
-                tolerance=BACKGROUND_TOLERANCE,
-                minimum_border_dominance=spec.minimum_border_dominance,
-            )
-            backgrounds.add(background)
-            removed_pixels += removed
-        processed.append(frame)
+    if spec.passthrough:
+        # The panoramic campfire source is already web-optimized with compact
+        # delta frames. Re-encoding the mostly static scene would make it over
+        # seven times heavier, so preserve its exact GIF bytes.
+        normalized = frames
+        copyfile(source, destination)
+        normalized[0].save(poster, format="PNG", optimize=True)
+    else:
+        processed: list[Image.Image] = []
+        for frame in frames:
+            if spec.remove_solid_background:
+                frame, background, removed = remove_border_connected_background(
+                    frame,
+                    tolerance=BACKGROUND_TOLERANCE,
+                    minimum_border_dominance=spec.minimum_border_dominance,
+                )
+                backgrounds.add(background)
+                removed_pixels += removed
+            processed.append(frame)
 
-    normalized = _square_normalize(processed)
-    normalized[0].save(poster, format="PNG", optimize=True)
-    paletted = [
-        _palette_frame(frame, timing_marker=bool(index % 2))
-        for index, frame in enumerate(normalized)
-    ]
-    paletted[0].save(
-        destination,
-        format="GIF",
-        save_all=True,
-        append_images=paletted[1:],
-        duration=durations,
-        loop=loop,
-        disposal=[2] * len(paletted),
-        transparency=TRANSPARENT_INDEX,
-        # Palette optimization already happened above. Keeping the exact table
-        # also preserves the duplicate timing marker used for repeated poses.
-        optimize=False,
-    )
+        normalized = _canvas_normalize(processed, square_canvas=spec.square_canvas)
+        normalized[0].save(poster, format="PNG", optimize=True)
+        paletted = [
+            _palette_frame(frame, timing_marker=bool(index % 2))
+            for index, frame in enumerate(normalized)
+        ]
+        paletted[0].save(
+            destination,
+            format="GIF",
+            save_all=True,
+            append_images=paletted[1:],
+            duration=durations,
+            loop=loop,
+            disposal=[2] * len(paletted),
+            transparency=TRANSPARENT_INDEX,
+            # Palette optimization already happened above. Keeping the exact table
+            # also preserves the duplicate timing marker used for repeated poses.
+            optimize=False,
+        )
 
     return {
         "name": destination.name,
@@ -304,6 +335,7 @@ def build_animation(spec: AnimationSpec) -> dict[str, object]:
         "source_bytes": source.stat().st_size,
         "backgrounds": sorted(backgrounds),
         "removed_pixels": removed_pixels,
+        "allow_opaque_canvas": spec.passthrough,
     }
 
 
@@ -398,6 +430,7 @@ def build_cursor() -> Path:
 def validate_animation(record: dict[str, object]) -> dict[str, object]:
     path = OUTPUT_DIR / str(record["name"])
     poster_path = OUTPUT_DIR / str(record["poster_name"])
+    allow_opaque_canvas = bool(record.get("allow_opaque_canvas"))
     with Image.open(path) as animation:
         frame_count = animation.n_frames
         if frame_count != record["expected_frames"]:
@@ -421,10 +454,10 @@ def validate_animation(record: dict[str, object]) -> dict[str, object]:
                 raise AssertionError(f"{path.name}: frame {index} has non-binary GIF alpha")
             transparent = alpha.tobytes().count(0)
             opaque = alpha.tobytes().count(255)
-            if transparent == 0 or opaque == 0:
+            if opaque == 0 or (transparent == 0 and not allow_opaque_canvas):
                 raise AssertionError(f"{path.name}: frame {index} lacks mixed alpha coverage")
             corners = (alpha.getpixel((0, 0)), alpha.getpixel((alpha.width - 1, 0)), alpha.getpixel((0, alpha.height - 1)), alpha.getpixel((alpha.width - 1, alpha.height - 1)))
-            if any(corners):
+            if any(corners) and not allow_opaque_canvas:
                 raise AssertionError(f"{path.name}: frame {index} has an opaque canvas corner")
             transparent_counts.append(transparent)
             opaque_counts.append(opaque)
@@ -446,7 +479,10 @@ def validate_animation(record: dict[str, object]) -> dict[str, object]:
                 f"{poster_path.name}: expected {record['expected_size']}, got {poster.size}"
             )
         alpha = rgba.getchannel("A")
-        if set(alpha.tobytes()) != {0, 255}:
+        alpha_values = set(alpha.tobytes())
+        if not alpha_values.issubset({0, 255}) or (
+            alpha_values == {255} and not allow_opaque_canvas
+        ):
             raise AssertionError(f"{poster_path.name}: expected mixed binary alpha")
         corners = (
             alpha.getpixel((0, 0)),
@@ -454,7 +490,7 @@ def validate_animation(record: dict[str, object]) -> dict[str, object]:
             alpha.getpixel((0, alpha.height - 1)),
             alpha.getpixel((alpha.width - 1, alpha.height - 1)),
         )
-        if any(corners):
+        if any(corners) and not allow_opaque_canvas:
             raise AssertionError(f"{poster_path.name}: has an opaque canvas corner")
     poster_bytes = poster_path.stat().st_size
     if poster_bytes <= 0 or poster_bytes > 1_000_000:
@@ -467,7 +503,7 @@ def validate_animation(record: dict[str, object]) -> dict[str, object]:
         "frames": frame_count,
         "duration_ms": sum(durations),
         "size": tuple(record["expected_size"]),
-        "alpha": "binary + transparent corners",
+        "alpha": "opaque scene" if allow_opaque_canvas else "binary + transparent corners",
         "transparent_range": (min(transparent_counts), max(transparent_counts)),
         "opaque_range": (min(opaque_counts), max(opaque_counts)),
         "bytes": output_bytes,
