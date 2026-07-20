@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { DownloadVariant } from '../types'
+
+const remuxMock = vi.hoisted(() => vi.fn())
+vi.mock('./remux', () => ({ remuxVideoWithBetterAudio: remuxMock }))
+
 import {
   buildDownloadFilename,
   downloadVariant,
@@ -19,6 +23,7 @@ const VIDEO_VARIANT: DownloadVariant = {
 }
 
 afterEach(() => {
+  remuxMock.mockReset()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
@@ -57,6 +62,67 @@ describe('nombres de descarga', () => {
 })
 
 describe('descarga cross-origin', () => {
+  it('combina las mejores pistas y guarda el MP4 resultante', async () => {
+    const NativeURL = URL
+    const createObjectURL = vi.fn(() => 'blob:test-remux')
+    class MockURL extends NativeURL {
+      static createObjectURL = createObjectURL
+      static revokeObjectURL = vi.fn()
+    }
+    vi.stubGlobal('URL', MockURL)
+    const clickMock = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    const progress = vi.fn()
+    remuxMock.mockImplementation(async ({ onProgress }) => {
+      onProgress?.({ phase: 'remuxing', percent: 50 })
+      return { blob: new Blob([new Uint8Array([1, 2, 3])], { type: 'video/mp4' }), bytes: 3 }
+    })
+    const variant: DownloadVariant = {
+      ...VIDEO_VARIANT,
+      sizeBytes: 3,
+      remuxSources: {
+        videoUrl: 'https://cdn.example/high.mp4',
+        audioUrl: 'https://cdn.example/audio.mp4',
+        videoSizeBytes: 2_000_000,
+        audioSizeBytes: 3_000_000,
+      },
+    }
+
+    const result = await downloadVariant(variant, { onProgress: progress })
+
+    expect(result).toEqual({ method: 'blob', filename: 'links-downloader-video.mp4', bytes: 3 })
+    expect(remuxMock).toHaveBeenCalledWith(expect.objectContaining({
+      videoUrl: 'https://cdn.example/high.mp4',
+      audioUrl: 'https://cdn.example/audio.mp4',
+    }))
+    expect(progress).toHaveBeenCalledWith({ loadedBytes: 2, totalBytes: 3, percent: 50 })
+    expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob))
+    expect(clickMock).toHaveBeenCalledOnce()
+  })
+
+  it('vuelve al archivo único con audio sano si el navegador no puede combinar', async () => {
+    remuxMock.mockRejectedValue(new TypeError('CORS'))
+    const openMock = vi.spyOn(window, 'open').mockReturnValue({ opener: null } as Window)
+    const variant: DownloadVariant = {
+      ...VIDEO_VARIANT,
+      url: 'https://cdn.example/audio-sano.mp4',
+      remuxSources: {
+        videoUrl: 'https://cdn.example/high.mp4',
+        audioUrl: 'https://cdn.example/audio-sano.mp4',
+        videoSizeBytes: 2_000_000,
+        audioSizeBytes: 3_000_000,
+      },
+    }
+
+    const result = await downloadVariant(variant)
+
+    expect(result.method).toBe('direct')
+    expect(openMock).toHaveBeenCalledWith(
+      'https://cdn.example/audio-sano.mp4',
+      '_blank',
+      'noopener,noreferrer',
+    )
+  })
+
   it('guarda un Blob e informa progreso cuando fetch funciona', async () => {
     const NativeURL = URL
     const createObjectURL = vi.fn(() => 'blob:test-download')

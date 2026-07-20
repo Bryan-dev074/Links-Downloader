@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { LinksDownloaderError } from './errors'
 import {
+  createPremiumRemuxVariant,
   isTikTokUrl,
   normalizeTikWmResponse,
   parseTikTokUrl,
@@ -318,7 +319,7 @@ describe('ranking técnico de calidad', () => {
     expect(ranked[0]?.id).toBe('hd-60')
   })
 
-  it('no penaliza una fuente cuando solo la alternativa informa FPS', () => {
+  it('prioriza el FPS verificado cuando la fuente no permite medirlo', () => {
     const common = {
       mediaType: 'video' as const,
       extension: 'mp4',
@@ -346,10 +347,10 @@ describe('ranking técnico de calidad', () => {
       },
     ])
 
-    expect(ranked[0]?.id).toBe('source-unknown-fps')
+    expect(ranked[0]?.id).toBe('hd-known-fps')
   })
 
-  it('conserva arriba una fuente no verificable y relega otras variantes desconocidas', () => {
+  it('prioriza una resolución verificada y conserva la fuente desconocida como alternativa', () => {
     const common = {
       mediaType: 'video' as const,
       extension: 'mp4',
@@ -384,8 +385,8 @@ describe('ranking técnico de calidad', () => {
     ])
 
     expect(ranked.map(({ id }) => id)).toEqual([
-      'unknown-source',
       'known-compatible',
+      'unknown-source',
       'unknown-hd',
     ])
   })
@@ -456,5 +457,372 @@ describe('ranking técnico de calidad', () => {
     ])
 
     expect(ranked).toHaveLength(2)
+  })
+
+  it('prioriza audio AAC íntegro sobre una variante HD con audio excesivamente comprimido', () => {
+    const common = {
+      mediaType: 'video' as const,
+      extension: 'mp4',
+      mimeType: 'video/mp4',
+      quality: 'original' as const,
+      isBest: false,
+      width: 720,
+      height: 1280,
+      fps: 30,
+      hasAudio: true,
+      audioChannels: 2,
+    }
+    const ranked = rankVideoVariants([
+      {
+        ...common,
+        id: 'hd-low-audio',
+        label: 'HD',
+        url: 'https://cdn.example/hd-low-audio.mp4',
+        providerTier: 'hd',
+        audioProfile: 'HE-AACv2',
+        audioBitrateBps: 32_000,
+      },
+      {
+        ...common,
+        id: 'compatible-premium-audio',
+        label: 'Compatible',
+        url: 'https://cdn.example/compatible-premium-audio.mp4',
+        providerTier: 'compatible',
+        audioProfile: 'AAC-LC',
+        audioBitrateBps: 128_000,
+      },
+    ])
+
+    expect(ranked[0]).toMatchObject({ id: 'compatible-premium-audio', isBest: true })
+  })
+
+  it('prepara video HD con el audio sano de otra variante sin recodificar', () => {
+    const common = {
+      mediaType: 'video' as const,
+      extension: 'mp4',
+      mimeType: 'video/mp4',
+      quality: 'original' as const,
+      isBest: false,
+      fps: 30,
+      hasAudio: true,
+      audioCodec: 'AAC',
+      audioChannels: 2,
+      audioSampleRateHz: 44_100,
+      audioSyncIssue: false,
+      audioMetadataVerified: true,
+      metadataVerified: true,
+      videoDurationSeconds: 10,
+    }
+    const premium = createPremiumRemuxVariant([
+      {
+        ...common,
+        id: 'hd',
+        label: 'HD',
+        url: 'https://cdn.example/hd.mp4',
+        width: 720,
+        height: 1280,
+        codec: 'HEVC',
+        providerTier: 'hd',
+        sizeBytes: 2_000_000,
+        videoBitrateBps: 1_500_000,
+        audioProfile: 'HE-AACv2',
+        audioBitrateBps: 32_000,
+        audioDurationSeconds: 10.1,
+      },
+      {
+        ...common,
+        id: 'compatible',
+        label: 'Compatible',
+        url: 'https://cdn.example/compatible.mp4',
+        width: 576,
+        height: 1024,
+        codec: 'H.264',
+        providerTier: 'compatible',
+        sizeBytes: 3_000_000,
+        videoBitrateBps: 2_000_000,
+        audioProfile: 'AAC-LC',
+        audioBitrateBps: 64_000,
+        audioDurationSeconds: 10.08,
+      },
+    ])
+
+    expect(premium).toMatchObject({
+      id: 'video-premium-av',
+      width: 720,
+      height: 1280,
+      codec: 'HEVC',
+      videoBitrateBps: 1_500_000,
+      audioProfile: 'AAC-LC',
+      audioBitrateBps: 64_000,
+      bitrateBps: 1_564_000,
+      remuxSources: {
+        videoUrl: 'https://cdn.example/hd.mp4',
+        audioUrl: 'https://cdn.example/compatible.mp4',
+      },
+    })
+  })
+
+  it('no combina pistas si el reloj de los dos videos no coincide', () => {
+    const common = {
+      mediaType: 'video' as const,
+      extension: 'mp4',
+      mimeType: 'video/mp4',
+      quality: 'original' as const,
+      isBest: false,
+      width: 720,
+      height: 1280,
+      fps: 30,
+      hasAudio: true,
+      audioCodec: 'AAC',
+      audioChannels: 2,
+      audioSampleRateHz: 44_100,
+      audioSyncIssue: false,
+      audioMetadataVerified: true,
+      metadataVerified: true,
+    }
+    expect(createPremiumRemuxVariant([
+      {
+        ...common,
+        id: 'hd',
+        label: 'HD',
+        url: 'https://cdn.example/hd.mp4',
+        audioBitrateBps: 32_000,
+        videoDurationSeconds: 10,
+        audioDurationSeconds: 10,
+      },
+      {
+        ...common,
+        id: 'donor',
+        label: 'Donor',
+        url: 'https://cdn.example/donor.mp4',
+        audioBitrateBps: 128_000,
+        videoDurationSeconds: 12,
+        audioDurationSeconds: 12,
+      },
+    ])).toBeUndefined()
+  })
+
+  it('aplica un piso de audio aunque la variante muy comprimida tenga más píxeles', () => {
+    const common = {
+      mediaType: 'video' as const,
+      extension: 'mp4',
+      mimeType: 'video/mp4',
+      quality: 'original' as const,
+      isBest: false,
+      fps: 30,
+      hasAudio: true,
+      audioChannels: 2,
+    }
+    const ranked = rankVideoVariants([
+      {
+        ...common,
+        id: '720-audio-32k',
+        label: '720p',
+        url: 'https://cdn.example/720-low-audio.mp4',
+        width: 720,
+        height: 1280,
+        audioBitrateBps: 32_000,
+        providerTier: 'hd',
+      },
+      {
+        ...common,
+        id: '576-audio-64k',
+        label: '576p',
+        url: 'https://cdn.example/576-good-audio.mp4',
+        width: 576,
+        height: 1024,
+        audioBitrateBps: 64_000,
+        providerTier: 'compatible',
+      },
+    ])
+
+    expect(ranked[0]?.id).toBe('576-audio-64k')
+  })
+
+  it('relega archivos sin audio o con un desfase fuerte', () => {
+    const common = {
+      mediaType: 'video' as const,
+      extension: 'mp4',
+      mimeType: 'video/mp4',
+      quality: 'original' as const,
+      isBest: false,
+      width: 1080,
+      height: 1920,
+      fps: 60,
+      providerTier: 'source' as const,
+    }
+    const ranked = rankVideoVariants([
+      {
+        ...common,
+        id: 'missing-audio',
+        label: 'Sin audio',
+        url: 'https://cdn.example/no-audio.mp4',
+        hasAudio: false,
+      },
+      {
+        ...common,
+        id: 'desynced',
+        label: 'Desincronizado',
+        url: 'https://cdn.example/desynced.mp4',
+        hasAudio: true,
+        audioSyncIssue: true,
+      },
+      {
+        ...common,
+        id: 'healthy',
+        label: 'Sano',
+        url: 'https://cdn.example/healthy.mp4',
+        hasAudio: true,
+        audioSyncIssue: false,
+        audioBitrateBps: 128_000,
+        audioChannels: 2,
+      },
+    ])
+
+    expect(ranked[0]?.id).toBe('healthy')
+  })
+
+  it('no deduplica muxes visualmente iguales cuando cambia la pista de audio', () => {
+    const common = {
+      mediaType: 'video' as const,
+      extension: 'mp4',
+      mimeType: 'video/mp4',
+      quality: 'original' as const,
+      isBest: false,
+      width: 720,
+      height: 1280,
+      fps: 30,
+      codec: 'H.264',
+      sizeBytes: 2_000_000,
+      hasAudio: true,
+      audioCodec: 'AAC',
+    }
+    const ranked = rankVideoVariants([
+      {
+        ...common,
+        id: 'aac-lc',
+        label: 'AAC-LC',
+        url: 'https://cdn.example/aac-lc.mp4',
+        audioProfile: 'AAC-LC',
+        audioBitrateBps: 128_000,
+      },
+      {
+        ...common,
+        id: 'he-aac',
+        label: 'HE-AACv2',
+        url: 'https://cdn.example/he-aac.mp4',
+        audioProfile: 'HE-AACv2',
+        audioBitrateBps: 32_000,
+      },
+    ])
+
+    expect(ranked).toHaveLength(2)
+  })
+
+  it('mantiene un orden determinista aunque falten bitrates en una variante', () => {
+    const common = {
+      mediaType: 'video' as const,
+      extension: 'mp4',
+      mimeType: 'video/mp4',
+      quality: 'original' as const,
+      isBest: false,
+      width: 720,
+      height: 1280,
+      fps: 30,
+      hasAudio: true,
+      audioChannels: 2,
+    }
+    const a = {
+      ...common,
+      id: 'a-256k',
+      label: 'A',
+      url: 'https://cdn.example/a.mp4',
+      audioBitrateBps: 256_000,
+      providerTier: 'compatible' as const,
+    }
+    const b = {
+      ...common,
+      id: 'b-unknown',
+      label: 'B',
+      url: 'https://cdn.example/b.mp4',
+      providerTier: 'hd' as const,
+    }
+    const c = {
+      ...common,
+      id: 'c-64k',
+      label: 'C',
+      url: 'https://cdn.example/c.mp4',
+      audioBitrateBps: 64_000,
+      providerTier: 'source' as const,
+    }
+    const permutations = [
+      [a, b, c],
+      [a, c, b],
+      [b, a, c],
+      [b, c, a],
+      [c, a, b],
+      [c, b, a],
+    ]
+
+    for (const variants of permutations) {
+      expect(rankVideoVariants(variants).map(({ id }) => id)).toEqual([
+        'a-256k',
+        'c-64k',
+        'b-unknown',
+      ])
+    }
+  })
+
+  it('agrupa el FPS medido para evitar ciclos por decimales de contenedor', () => {
+    const common = {
+      mediaType: 'video' as const,
+      extension: 'mp4',
+      mimeType: 'video/mp4',
+      quality: 'original' as const,
+      isBest: false,
+      width: 1080,
+      height: 1920,
+      providerTier: 'hd' as const,
+    }
+    const fps30 = {
+      ...common,
+      id: 'fps-30',
+      label: '30',
+      url: 'https://cdn.example/30.mp4',
+      fps: 30,
+      videoBitrateBps: 300_000,
+    }
+    const fps303 = {
+      ...common,
+      id: 'fps-30-3',
+      label: '30.3',
+      url: 'https://cdn.example/30-3.mp4',
+      fps: 30.3,
+      videoBitrateBps: 200_000,
+    }
+    const fps306 = {
+      ...common,
+      id: 'fps-30-6',
+      label: '30.6',
+      url: 'https://cdn.example/30-6.mp4',
+      fps: 30.6,
+      videoBitrateBps: 100_000,
+    }
+    const permutations = [
+      [fps30, fps303, fps306],
+      [fps30, fps306, fps303],
+      [fps303, fps30, fps306],
+      [fps303, fps306, fps30],
+      [fps306, fps30, fps303],
+      [fps306, fps303, fps30],
+    ]
+
+    for (const variants of permutations) {
+      expect(rankVideoVariants(variants).map(({ id }) => id)).toEqual([
+        'fps-30-6',
+        'fps-30',
+        'fps-30-3',
+      ])
+    }
   })
 })

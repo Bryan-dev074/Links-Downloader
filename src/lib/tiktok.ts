@@ -19,6 +19,7 @@ const DEFAULT_TIMEOUT_MS = 30_000
 const TIKWM_ASSET_BASE = 'https://www.tikwm.com'
 const ORIGINAL_POLL_ATTEMPTS = 18
 const ORIGINAL_POLL_INTERVAL_MS = 900
+const MAX_PREMIUM_REMUX_SOURCE_BYTES = 64 * 1024 * 1024
 
 type UnknownRecord = Record<string, unknown>
 
@@ -140,14 +141,27 @@ function resolutionLabel(variant: DownloadVariant): string | undefined {
 
 function labelForVideoVariant(variant: DownloadVariant, isBest: boolean): string {
   const resolution = resolutionLabel(variant)
-  if (isBest) return resolution ? `Máxima calidad · ${resolution}` : 'Máxima calidad disponible'
+  const minimumHealthyAudio = variant.audioChannels === 1 ? 32_000 : 48_000
+  const audioNote = variant.hasAudio && variant.audioBitrateBps
+    && variant.audioBitrateBps < minimumHealthyAudio
+    ? ' · audio muy comprimido'
+    : ''
+  if (isBest) {
+    return resolution
+      ? `Máxima calidad audiovisual · ${resolution}`
+      : 'Máxima calidad audiovisual disponible'
+  }
   if (variant.providerTier === 'source') {
-    return resolution ? `Archivo fuente · ${resolution}` : 'Archivo fuente · Original'
+    return resolution
+      ? `Archivo fuente · ${resolution}${audioNote}`
+      : `Archivo fuente disponible${audioNote}`
   }
   if (variant.providerTier === 'hd') {
-    return resolution ? `Alta resolución · ${resolution}` : 'Alta resolución del proveedor'
+    return resolution
+      ? `Alta resolución · ${resolution}${audioNote}`
+      : `Alta resolución del proveedor${audioNote}`
   }
-  return resolution ? `Compatible · ${resolution}` : 'Calidad compatible'
+  return resolution ? `Compatible · ${resolution}${audioNote}` : `Calidad compatible${audioNote}`
 }
 
 function semanticVideoFingerprint(variant: DownloadVariant): string | undefined {
@@ -164,10 +178,142 @@ function semanticVideoFingerprint(variant: DownloadVariant): string | undefined 
     variant.height,
     variant.codec,
     Math.round(variant.fps * 100) / 100,
+    variant.hasAudio ?? 'audio-unknown',
+    variant.audioCodec ?? 'codec-unknown',
+    variant.audioProfile ?? 'profile-unknown',
+    variant.audioBitrateBps ? Math.round(variant.audioBitrateBps / 1000) : 'bitrate-unknown',
+    variant.audioSampleRateHz ?? 'rate-unknown',
+    variant.audioChannels ?? 'channels-unknown',
   ].join(':')
 }
 
-/** Marca como premium la variante de mayor resolución real y deduplica copias idénticas. */
+function visualVariantOrder(left: DownloadVariant, right: DownloadVariant): number {
+  const leftPixels = (left.width ?? 0) * (left.height ?? 0)
+  const rightPixels = (right.width ?? 0) * (right.height ?? 0)
+  if (leftPixels !== rightPixels) return rightPixels - leftPixels
+  const fpsDifference = Math.round(right.fps ?? 0) - Math.round(left.fps ?? 0)
+  if (fpsDifference !== 0) return fpsDifference
+  const videoBitrateDifference = (right.videoBitrateBps ?? 0) - (left.videoBitrateBps ?? 0)
+  if (videoBitrateDifference !== 0) return videoBitrateDifference
+  return (right.bitrateBps ?? 0) - (left.bitrateBps ?? 0)
+}
+
+function minimumUsefulAudioBitrate(variant: DownloadVariant): number {
+  return variant.audioChannels === 1 ? 32_000 : 48_000
+}
+
+function hasVeryCompressedAudio(variant: DownloadVariant): boolean {
+  return variant.hasAudio === false
+    || variant.audioSyncIssue === true
+    || Boolean(
+      variant.hasAudio
+      && variant.audioBitrateBps
+      && variant.audioBitrateBps < minimumUsefulAudioBitrate(variant),
+    )
+}
+
+function hasVerifiedUsefulAudio(variant: DownloadVariant): boolean {
+  return Boolean(
+    variant.audioMetadataVerified
+    && variant.hasAudio
+    && variant.audioSyncIssue === false
+    && variant.audioBitrateBps
+    && variant.audioBitrateBps >= minimumUsefulAudioBitrate(variant),
+  )
+}
+
+function timelinesCanBeRemuxed(video: DownloadVariant, audio: DownloadVariant): boolean {
+  const targetDuration = video.videoDurationSeconds
+  const donorVideoDuration = audio.videoDurationSeconds
+  const donorAudioDuration = audio.audioDurationSeconds
+  if (!targetDuration || !donorVideoDuration || !donorAudioDuration) return false
+  const fps = video.fps && video.fps >= 1 ? video.fps : 30
+  const clockTolerance = Math.max(0.12, 3 / fps)
+  if (Math.abs(targetDuration - donorVideoDuration) > clockTolerance) return false
+  return Math.abs(targetDuration - donorAudioDuration) <= 0.25
+}
+
+/**
+ * Crea una variante virtual que copia el mejor track de video y el mejor audio
+ * compatible. El MP4 se ensambla al descargar; aquí no se transfieren bytes.
+ */
+export function createPremiumRemuxVariant(
+  variants: DownloadVariant[],
+): DownloadVariant | undefined {
+  const inspectable = variants
+    .filter((variant) => (
+      variant.mediaType === 'video'
+      && !variant.requiresDirectDownload
+      && variant.metadataVerified
+      && variant.width
+      && variant.height
+      && variant.sizeBytes
+    ))
+    .sort(visualVariantOrder)
+  const video = inspectable[0]
+  if (!video || !hasVeryCompressedAudio(video)) return undefined
+
+  const audio = inspectable
+    .filter((variant) => (
+      variant.id !== video.id
+      && variant.url !== video.url
+      && hasVerifiedUsefulAudio(variant)
+      && timelinesCanBeRemuxed(video, variant)
+    ))
+    .sort((left, right) => (
+      (right.audioBitrateBps ?? 0) - (left.audioBitrateBps ?? 0)
+      || visualVariantOrder(left, right)
+    ))[0]
+  if (!audio) return undefined
+  if (
+    !video.sizeBytes
+    || !audio.sizeBytes
+    || video.sizeBytes + audio.sizeBytes > MAX_PREMIUM_REMUX_SOURCE_BYTES
+  ) return undefined
+
+  const duration = video.videoDurationSeconds
+  const bitrateBps = video.videoBitrateBps && audio.audioBitrateBps
+    ? video.videoBitrateBps + audio.audioBitrateBps
+    : undefined
+  const sizeBytes = bitrateBps && duration
+    ? Math.round((bitrateBps * duration) / 8)
+    : video.sizeBytes
+  const avDurationDeltaSeconds = duration && audio.audioDurationSeconds
+    ? Math.round(Math.abs(duration - audio.audioDurationSeconds) * 1000) / 1000
+    : undefined
+
+  return {
+    ...video,
+    id: 'video-premium-av',
+    label: 'Máxima calidad audiovisual combinada',
+    // Si el remux no es posible en ese navegador, el fallback conserva el audio sano.
+    url: audio.url,
+    quality: 'best',
+    isBest: false,
+    sizeBytes,
+    bitrateBps,
+    hasAudio: true,
+    audioCodec: audio.audioCodec,
+    audioProfile: audio.audioProfile,
+    audioBitrateBps: audio.audioBitrateBps,
+    audioSampleRateHz: audio.audioSampleRateHz,
+    audioChannels: audio.audioChannels,
+    audioDurationSeconds: audio.audioDurationSeconds,
+    avDurationDeltaSeconds,
+    audioSyncIssue: false,
+    audioMetadataVerified: true,
+    requiresDirectDownload: false,
+    probeUrl: undefined,
+    remuxSources: {
+      videoUrl: video.url,
+      audioUrl: audio.url,
+      videoSizeBytes: video.sizeBytes,
+      audioSizeBytes: audio.sizeBytes,
+    },
+  }
+}
+
+/** Marca como premium la mejor variante audiovisual real y deduplica copias idénticas. */
 export function rankVideoVariants(
   variants: DownloadVariant[],
   durationSeconds?: number,
@@ -519,10 +665,22 @@ async function enrichVideoQuality(
         ...variant,
         ...metadata,
         metadataVerified: Boolean(metadata?.width && metadata.height),
+        audioMetadataVerified: metadata?.hasAudio === false || Boolean(
+          metadata?.hasAudio
+          && metadata.audioCodec
+          && metadata.audioBitrateBps
+          && metadata.audioSampleRateHz
+          && metadata.audioChannels
+          && typeof metadata.audioSyncIssue === 'boolean',
+        ),
       }
     }),
   )
-  const rankedVideos = rankVideoVariants(enriched, media.durationSeconds)
+  const premiumRemux = createPremiumRemuxVariant(enriched)
+  const rankedVideos = rankVideoVariants(
+    premiumRemux ? [...enriched, premiumRemux] : enriched,
+    media.durationSeconds,
+  )
   const nonVideoVariants = media.variants.filter((variant) => variant.mediaType !== 'video')
   return { ...media, variants: [...rankedVideos, ...nonVideoVariants] }
 }

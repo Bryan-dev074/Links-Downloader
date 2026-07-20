@@ -5,6 +5,7 @@ import type {
   ResolvedMedia,
 } from '../types'
 import { LinksDownloaderError } from './errors'
+import { remuxVideoWithBetterAudio } from './remux'
 import { createRequestSignal } from './request'
 
 const DEFAULT_DOWNLOAD_TIMEOUT_MS = 120_000
@@ -220,6 +221,47 @@ export async function downloadVariant(
   )
 
   try {
+    if (variant.remuxSources) {
+      const {
+        videoUrl,
+        audioUrl,
+        videoSizeBytes,
+        audioSizeBytes,
+      } = variant.remuxSources
+      if (!videoSizeBytes || !audioSizeBytes) {
+        throw new LinksDownloaderError(
+          'DOWNLOAD_FAILED',
+          'No se pudo verificar el tamaño de las pistas que deben combinarse.',
+        )
+      }
+      const estimatedBytes = variant.sizeBytes ?? videoSizeBytes
+      const result = await remuxVideoWithBetterAudio({
+        videoUrl,
+        audioUrl,
+        videoSizeBytes,
+        audioSizeBytes,
+        signal: requestSignal.signal,
+        onProgress: ({ percent }) => {
+          options.onProgress?.({
+            loadedBytes: Math.round((estimatedBytes * percent) / 100),
+            totalBytes: estimatedBytes,
+            percent,
+          })
+        },
+      })
+      if (!result.blob) {
+        throw new LinksDownloaderError('DOWNLOAD_FAILED', 'No se pudo crear el archivo final.')
+      }
+      if (result.bytes > maximumBlobBytes) {
+        throw new LinksDownloaderError(
+          'DOWNLOAD_FAILED',
+          'El archivo final es demasiado grande para guardarlo en memoria.',
+        )
+      }
+      triggerBlobDownload(result.blob, filename)
+      return { method: 'blob', filename, bytes: result.bytes }
+    }
+
     if (fallbackToDirect && variant.requiresDirectDownload) {
       triggerDirectAttachment(url, filename)
       return { method: 'direct', filename }

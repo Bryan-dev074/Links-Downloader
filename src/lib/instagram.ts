@@ -262,9 +262,21 @@ async function verifyInstagramVideos(
         ...variant,
         ...(metadata ?? {}),
         metadataVerified: Boolean(metadata?.width && metadata.height),
+        audioMetadataVerified: metadata?.hasAudio === false || Boolean(
+          metadata?.hasAudio
+          && metadata.audioCodec
+          && metadata.audioBitrateBps
+          && metadata.audioSampleRateHz
+          && metadata.audioChannels
+          && typeof metadata.audioSyncIssue === 'boolean',
+        ),
       })
     } catch {
-      verifiedVideos.set(variant.id, { ...variant, metadataVerified: false })
+      verifiedVideos.set(variant.id, {
+        ...variant,
+        metadataVerified: false,
+        audioMetadataVerified: false,
+      })
     }
   }))
   if (signal.aborted) throw signal.reason

@@ -8,18 +8,19 @@ Una experiencia web **mobile-first** para descargar contenido público de TikTok
 ## Qué ofrece
 
 - Flujo directo: pegar un enlace, resolver el video y elegir una descarga.
-- En TikTok compara la variante fuente, HD y compatible; la de mayor resolución real queda arriba.
+- En TikTok compara las variantes fuente, HD y compatible, incluida la calidad de sus pistas de audio.
+- Si la mejor imagen trae audio muy comprimido, combina en el navegador ese video con la mejor mezcla de audio compatible, sin recodificar ninguna pista.
 - En Instagram toma el video o la imagen de mayor resolución declarada por la publicación, incluidos carruseles mixtos.
-- Muestra resolución, codec, FPS, bitrate estimado y tamaño cuando están disponibles.
+- Muestra resolución, codec, FPS, bitrate de video y audio, perfil AAC, frecuencia, canales y tamaño cuando están disponibles.
 - Experiencia adaptable, diseñada principalmente para teléfonos.
 - Interfaz temática con animaciones y estados visuales durante la resolución.
 - Despliegue en Vercel sin base de datos; una función acotada respalda la lectura de metadatos.
 
-La aplicación no recomprime, remultiplexa ni reescala el contenido. En TikTok inspecciona los MP4 disponibles y prioriza resolución; si dos variantes tienen la misma resolución, usa FPS, origen y bitrate estimado para desempatar. En Instagram selecciona el candidato progresivo de mayor resolución que la propia página pública declara. La calidad final siempre depende del archivo publicado y de lo que la plataforma entregue en ese momento, por lo que no puede garantizarse una resolución concreta.
+La aplicación no recomprime ni reescala el contenido. En TikTok relega archivos sin audio, desincronizados o con una pista estéreo excesivamente comprimida cuando existe una alternativa sana; después compara resolución, FPS y bitrates reales de las pistas. Cuando dos versiones compatibles reparten la mejor imagen y el mejor audio, puede remultiplexar esos paquetes en un MP4 nuevo dentro del navegador: copia los bytes codificados, sin cambiar FPS, codec, bitrate ni velocidad. En Instagram selecciona el candidato progresivo de mayor resolución que la propia página pública declara. La calidad final siempre depende del archivo publicado y de lo que la plataforma entregue en ese momento, por lo que no puede garantizarse una resolución o bitrate concretos ni reconstruir calidad que el proveedor no exponga.
 
 ## Cómo funciona
 
-Para TikTok, la aplicación consulta desde el navegador tanto el endpoint HD como el flujo de tareas de calidad fuente de **TikWM**. Después lee metadatos del contenedor MP4 mediante solicitudes parciales o `preload="metadata"`, elige la mejor variante comprobada y conserva las alternativas útiles. Una Vercel Function restringida a `v16.tokcdn.com` puede leer como máximo 1,5 MiB del MP4 para comprobar resolución, codec y FPS cuando el navegador no entiende el codec. Si el flujo fuente falla, vuelve automáticamente a HD/compatible.
+Para TikTok, la aplicación consulta desde el navegador tanto el endpoint HD como el flujo de tareas de calidad fuente de **TikWM**. Después lee metadatos del contenedor MP4 mediante solicitudes parciales o `preload="metadata"`, elige la mejor variante audiovisual comprobada y conserva las alternativas útiles. El analizador inspecciona por separado los tracks `vide` y `soun`: resolución, codec, FPS, duración, bitrate, perfil AAC, frecuencia, canales y diferencia de duración A/V. Si necesita combinar pistas, carga Mediabunny bajo demanda, valida que ambos relojes correspondan al mismo video y crea el MP4 localmente con un límite móvil conservador de 64 MiB entre fuentes; ante cualquier incompatibilidad vuelve automáticamente al mejor archivo único con audio sano. Una Vercel Function restringida a `v16.tokcdn.com` puede leer como máximo 1,5 MiB del MP4 cuando el navegador no puede acceder a sus bytes. Si el flujo fuente falla, vuelve automáticamente a HD/compatible.
 
 Para Instagram, otra función valida primero el dominio y la ruta, descarga como máximo 4 MiB del documento público y localiza los metadatos que Instagram incluye para visitantes sin sesión. Selecciona el candidato original con más resolución, acepta únicamente URLs HTTPS de los CDN de Meta y entrega esa URL firmada al navegador. Si Instagram exige iniciar sesión a la IP de Vercel, usa como respaldo el endpoint público fijo de `@jerrycoder/instagram-api`; su respuesta queda limitada en tamaño y cada archivo se vuelve a validar por host, ruta, MIME y una lectura parcial. La función no retransmite ni almacena el archivo multimedia.
 

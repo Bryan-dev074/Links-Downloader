@@ -77,14 +77,262 @@ function codecName(sampleEntry) {
   }[sampleEntry]
 }
 
-function parseMp4VideoMetadata(buffer) {
+function audioCodecName(sampleEntry) {
+  return {
+    mp4a: 'AAC',
+    Opus: 'Opus',
+    opus: 'Opus',
+    '.mp3': 'MP3',
+    alac: 'ALAC',
+    'ac-3': 'AC-3',
+    'ec-3': 'E-AC-3',
+  }[sampleEntry]
+}
+
+function sampleTable(view, track) {
+  const media = childBox(view, track, 'mdia')
+  const mediaInfo = media ? childBox(view, media, 'minf') : undefined
+  return mediaInfo ? childBox(view, mediaInfo, 'stbl') : undefined
+}
+
+function firstSampleEntry(view, track) {
+  const table = sampleTable(view, track)
+  const description = table ? childBox(view, table, 'stsd') : undefined
+  if (!description || description.dataStart + 8 > description.end) return undefined
+  if (view.getUint32(description.dataStart + 4) < 1) return undefined
+  return readBox(view, description.dataStart + 8, description.end)
+}
+
+function mediaTiming(view, track) {
+  const media = childBox(view, track, 'mdia')
+  const header = media ? childBox(view, media, 'mdhd') : undefined
+  if (!header || header.dataStart + 4 > header.end) return undefined
+  const version = view.getUint8(header.dataStart)
+  if (version !== 0 && version !== 1) return undefined
+  const timescaleOffset = header.dataStart + (version === 1 ? 20 : 12)
+  const durationOffset = timescaleOffset + 4
+  const durationBytes = version === 1 ? 8 : 4
+  if (durationOffset + durationBytes > header.end) return undefined
+  const timescale = view.getUint32(timescaleOffset)
+  if (timescale <= 0) return undefined
+  const rawDuration = version === 1
+    ? view.getBigUint64(durationOffset)
+    : BigInt(view.getUint32(durationOffset))
+  const durationSeconds = rawDuration > 0n && rawDuration <= BigInt(Number.MAX_SAFE_INTEGER)
+    ? Number(rawDuration) / timescale
+    : undefined
+  return {
+    timescale,
+    durationSeconds: durationSeconds && Number.isFinite(durationSeconds)
+      ? Math.round(durationSeconds * 1000) / 1000
+      : undefined,
+  }
+}
+
+function sampleDurationSeconds(view, track) {
+  const timing = mediaTiming(view, track)
+  const table = sampleTable(view, track)
+  const timeToSample = table ? childBox(view, table, 'stts') : undefined
+  if (!timing || !timeToSample || timeToSample.dataStart + 8 > timeToSample.end) {
+    return timing?.durationSeconds
+  }
+  const entryCount = view.getUint32(timeToSample.dataStart + 4)
+  let cursor = timeToSample.dataStart + 8
+  let ticks = 0n
+  for (let index = 0; index < entryCount; index += 1) {
+    if (cursor + 8 > timeToSample.end) return timing.durationSeconds
+    ticks += BigInt(view.getUint32(cursor)) * BigInt(view.getUint32(cursor + 4))
+    cursor += 8
+  }
+  if (ticks <= 0n || ticks > BigInt(Number.MAX_SAFE_INTEGER)) return timing.durationSeconds
+  const duration = Number(ticks) / timing.timescale
+  return Number.isFinite(duration) && duration > 0
+    ? Math.round(duration * 1000) / 1000
+    : timing.durationSeconds
+}
+
+function framesPerSecond(view, track) {
+  const timing = mediaTiming(view, track)
+  const table = sampleTable(view, track)
+  const timeToSample = table ? childBox(view, table, 'stts') : undefined
+  if (!timing || !timeToSample || timeToSample.dataStart + 8 > timeToSample.end) return undefined
+  const entryCount = view.getUint32(timeToSample.dataStart + 4)
+  let cursor = timeToSample.dataStart + 8
+  let samples = 0
+  let ticks = 0
+  for (let index = 0; index < entryCount && cursor + 8 <= timeToSample.end; index += 1) {
+    const sampleCount = view.getUint32(cursor)
+    const sampleDelta = view.getUint32(cursor + 4)
+    samples += sampleCount
+    ticks += sampleCount * sampleDelta
+    cursor += 8
+  }
+  const measured = samples > 0 && ticks > 0 ? (samples * timing.timescale) / ticks : 0
+  return Number.isFinite(measured) && measured >= 1 && measured <= 240
+    ? Math.round(measured * 100) / 100
+    : undefined
+}
+
+function descriptorPayload(view, descriptorOffset, limit) {
+  let cursor = descriptorOffset + 1
+  let length = 0
+  for (let index = 0; index < 4; index += 1) {
+    if (cursor >= limit) return undefined
+    const value = view.getUint8(cursor)
+    cursor += 1
+    length = (length << 7) | (value & 0x7f)
+    if ((value & 0x80) === 0) {
+      return cursor + length <= limit ? { start: cursor, end: cursor + length } : undefined
+    }
+  }
+  return undefined
+}
+
+function parseAacConfig(view, start, end) {
+  let bitOffset = 0
+  const bitLength = (end - start) * 8
+  const readBits = (count) => {
+    if (count < 1 || bitOffset + count > bitLength) return undefined
+    let value = 0
+    for (let index = 0; index < count; index += 1) {
+      const absoluteBit = bitOffset + index
+      const byte = view.getUint8(start + Math.floor(absoluteBit / 8))
+      value = (value << 1) | ((byte >> (7 - (absoluteBit % 8))) & 1)
+    }
+    bitOffset += count
+    return value
+  }
+  const readAudioObjectType = () => {
+    const base = readBits(5)
+    if (base === undefined) return undefined
+    if (base !== 31) return base
+    const extension = readBits(6)
+    return extension === undefined ? undefined : 32 + extension
+  }
+  const sampleRates = [
+    96_000, 88_200, 64_000, 48_000, 44_100, 32_000, 24_000,
+    22_050, 16_000, 12_000, 11_025, 8_000, 7_350,
+  ]
+  const readSampleRate = () => {
+    const index = readBits(4)
+    if (index === undefined) return undefined
+    if (index === 15) return readBits(24)
+    return sampleRates[index]
+  }
+  const audioObjectType = readAudioObjectType()
+  const baseSampleRate = readSampleRate()
+  const channelConfiguration = readBits(4)
+  if (audioObjectType === undefined) return undefined
+  const profiles = { 2: 'AAC-LC', 5: 'HE-AAC', 29: 'HE-AACv2', 42: 'xHE-AAC' }
+  let effectiveSampleRate = baseSampleRate
+  if (audioObjectType === 5 || audioObjectType === 29) {
+    effectiveSampleRate = readSampleRate() ?? baseSampleRate
+  }
+  return {
+    profile: profiles[audioObjectType],
+    sampleRateHz: effectiveSampleRate,
+    channels: channelConfiguration && channelConfiguration <= 2
+      ? channelConfiguration
+      : undefined,
+  }
+}
+
+function aacConfig(view, entry) {
+  let esds
+  for (let offset = entry.dataStart + 20; offset + 4 <= entry.end; offset += 1) {
+    if (readAscii(view, offset, 4) !== 'esds') continue
+    const candidate = readBox(view, offset - 4, entry.end)
+    if (candidate?.type === 'esds') {
+      esds = candidate
+      break
+    }
+  }
+  if (!esds) return undefined
+  for (let offset = esds.dataStart + 4; offset + 3 <= esds.end; offset += 1) {
+    if (view.getUint8(offset) !== 0x05) continue
+    const payload = descriptorPayload(view, offset, esds.end)
+    if (!payload || payload.end - payload.start < 2 || payload.end - payload.start > 8) continue
+    const config = parseAacConfig(view, payload.start, payload.end)
+    if (config) return config
+  }
+  return undefined
+}
+
+function audioSampleMetadata(view, track) {
+  const entry = firstSampleEntry(view, track)
+  if (!entry) return {}
+  const audioCodec = audioCodecName(entry.type)
+  const config = entry.type === 'mp4a' ? aacConfig(view, entry) : undefined
+  const audioProfile = config?.profile
+  if (entry.dataStart + 28 > entry.end) {
+    return {
+      audioCodec,
+      audioProfile,
+      audioSampleRateHz: config?.sampleRateHz,
+      audioChannels: config?.channels,
+    }
+  }
+  const channels = view.getUint16(entry.dataStart + 16)
+  const sampleRate = view.getUint32(entry.dataStart + 24) / 65_536
+  return {
+    audioCodec,
+    audioProfile,
+    audioChannels: channels > 0 && channels <= 32 ? channels : config?.channels,
+    audioSampleRateHz: config?.sampleRateHz ?? (
+      sampleRate >= 8_000 && sampleRate <= 768_000 ? Math.round(sampleRate) : undefined
+    ),
+  }
+}
+
+function trackPayloadBytes(view, track) {
+  const table = sampleTable(view, track)
+  const sampleSizes = table ? childBox(view, table, 'stsz') : undefined
+  if (!sampleSizes || sampleSizes.dataStart + 12 > sampleSizes.end) return undefined
+  const uniformSize = view.getUint32(sampleSizes.dataStart + 4)
+  const sampleCount = view.getUint32(sampleSizes.dataStart + 8)
+  if (sampleCount === 0) return undefined
+  if (uniformSize > 0) {
+    const total = uniformSize * sampleCount
+    return Number.isSafeInteger(total) ? total : undefined
+  }
+  let cursor = sampleSizes.dataStart + 12
+  let total = 0
+  for (let index = 0; index < sampleCount; index += 1) {
+    if (cursor + 4 > sampleSizes.end) return undefined
+    total += view.getUint32(cursor)
+    if (!Number.isSafeInteger(total)) return undefined
+    cursor += 4
+  }
+  return total > 0 ? total : undefined
+}
+
+function trackBitrate(view, track, durationSeconds) {
+  const bytes = trackPayloadBytes(view, track)
+  if (!bytes || !durationSeconds || durationSeconds <= 0) return undefined
+  const bitrate = (bytes * 8) / durationSeconds
+  return Number.isFinite(bitrate) && bitrate > 0 ? Math.round(bitrate) : undefined
+}
+
+function audioSyncMetadata(videoDurationSeconds, audioDurationSeconds) {
+  if (!videoDurationSeconds || !audioDurationSeconds) return {}
+  const delta = Math.abs(videoDurationSeconds - audioDurationSeconds)
+  const reference = Math.max(videoDurationSeconds, audioDurationSeconds)
+  const tolerance = Math.max(0.25, Math.min(1, reference * 0.01))
+  return {
+    avDurationDeltaSeconds: Math.round(delta * 1000) / 1000,
+    audioSyncIssue: delta > tolerance,
+  }
+}
+
+export function parseMp4VideoMetadata(buffer) {
   const view = new DataView(buffer)
   const movie = findContainedBox(view, 'moov')
   if (!movie) return undefined
-  const track = childBoxes(view, movie)
-    .filter((box) => box.type === 'trak')
+  const tracks = childBoxes(view, movie).filter((box) => box.type === 'trak')
+  const track = tracks
     .find((candidate) => handlerType(view, candidate) === 'vide')
   if (!track) return undefined
+  const audioTrack = tracks.find((candidate) => handlerType(view, candidate) === 'soun')
 
   const trackHeader = childBox(view, track, 'tkhd')
   if (!trackHeader || trackHeader.end - 8 < trackHeader.dataStart) return undefined
@@ -92,41 +340,25 @@ function parseMp4VideoMetadata(buffer) {
   const height = Math.round(view.getUint32(trackHeader.end - 4) / 65_536)
   if (width < 1 || height < 1 || width > 16_384 || height > 16_384) return undefined
 
-  const media = childBox(view, track, 'mdia')
-  const mediaInfo = media ? childBox(view, media, 'minf') : undefined
-  const sampleTable = mediaInfo ? childBox(view, mediaInfo, 'stbl') : undefined
-  const sampleDescription = sampleTable ? childBox(view, sampleTable, 'stsd') : undefined
-  const codec = sampleDescription && sampleDescription.dataStart + 16 <= sampleDescription.end
-    ? codecName(readAscii(view, sampleDescription.dataStart + 12, 4))
-    : undefined
-
-  let fps
-  const mediaHeader = media ? childBox(view, media, 'mdhd') : undefined
-  const timeToSample = sampleTable ? childBox(view, sampleTable, 'stts') : undefined
-  if (mediaHeader && timeToSample && timeToSample.dataStart + 8 <= timeToSample.end) {
-    const version = view.getUint8(mediaHeader.dataStart)
-    const timescaleOffset = mediaHeader.dataStart + (version === 1 ? 20 : 12)
-    const timescale = timescaleOffset + 4 <= mediaHeader.end
-      ? view.getUint32(timescaleOffset)
-      : 0
-    const entryCount = view.getUint32(timeToSample.dataStart + 4)
-    let cursor = timeToSample.dataStart + 8
-    let samples = 0
-    let ticks = 0
-    for (let index = 0; index < entryCount && cursor + 8 <= timeToSample.end; index += 1) {
-      const sampleCount = view.getUint32(cursor)
-      const sampleDelta = view.getUint32(cursor + 4)
-      samples += sampleCount
-      ticks += sampleCount * sampleDelta
-      cursor += 8
-    }
-    const measuredFps = samples > 0 && ticks > 0 ? (samples * timescale) / ticks : 0
-    if (Number.isFinite(measuredFps) && measuredFps >= 1 && measuredFps <= 240) {
-      fps = Math.round(measuredFps * 100) / 100
-    }
+  const videoDurationSeconds = sampleDurationSeconds(view, track)
+  const audioDurationSeconds = audioTrack ? sampleDurationSeconds(view, audioTrack) : undefined
+  return {
+    width,
+    height,
+    codec: firstSampleEntry(view, track)
+      ? codecName(firstSampleEntry(view, track).type)
+      : undefined,
+    fps: framesPerSecond(view, track),
+    videoBitrateBps: trackBitrate(view, track, videoDurationSeconds),
+    hasAudio: Boolean(audioTrack),
+    ...(audioTrack ? audioSampleMetadata(view, audioTrack) : {}),
+    audioBitrateBps: audioTrack
+      ? trackBitrate(view, audioTrack, audioDurationSeconds)
+      : undefined,
+    videoDurationSeconds,
+    audioDurationSeconds,
+    ...audioSyncMetadata(videoDurationSeconds, audioDurationSeconds),
   }
-
-  return { width, height, codec, fps }
 }
 
 export function isAllowedTokCdnUrl(value) {

@@ -28,6 +28,18 @@ function formatBitrate(bitsPerSecond?: number): string | undefined {
   return `${(bitsPerSecond / 1_000_000).toFixed(2).replace(/0$/, '')} Mbit/s`
 }
 
+function formatSampleRate(hertz?: number): string | undefined {
+  if (!hertz || hertz <= 0) return undefined
+  const kilohertz = hertz / 1000
+  return `${Number.isInteger(kilohertz) ? kilohertz : kilohertz.toFixed(1)} kHz`
+}
+
+function formatChannels(channels?: number): string | undefined {
+  if (channels === 1) return 'mono'
+  if (channels === 2) return 'estéreo'
+  return channels && channels > 0 ? `${channels} canales` : undefined
+}
+
 function iconForVariant(variant: DownloadVariant): PixelIconName {
   if (variant.mediaType === 'audio') return 'audio'
   if (variant.mediaType === 'image') return 'image'
@@ -45,8 +57,26 @@ function variantMeta(variant: DownloadVariant): string {
   if (variant.width && variant.height) parts.push(`${variant.width} × ${variant.height}`)
   if (variant.codec) parts.push(variant.codec)
   if (variant.fps && variant.fps >= 1) parts.push(`${Math.round(variant.fps)} FPS`)
-  const bitrate = formatBitrate(variant.bitrateBps)
-  if (bitrate) parts.push(`~${bitrate}`)
+  const videoBitrate = formatBitrate(variant.videoBitrateBps)
+  const totalBitrate = formatBitrate(variant.bitrateBps)
+  if (videoBitrate) parts.push(`video ${videoBitrate}`)
+  else if (totalBitrate) parts.push(`total ~${totalBitrate}`)
+
+  if (variant.mediaType === 'video') {
+    if (variant.hasAudio === false) {
+      parts.push('sin audio')
+    } else if (variant.hasAudio) {
+      parts.push(variant.audioProfile ?? variant.audioCodec ?? 'audio integrado')
+      const audioBitrate = formatBitrate(variant.audioBitrateBps)
+      if (audioBitrate) parts.push(`audio ${audioBitrate}`)
+      const sampleRate = formatSampleRate(variant.audioSampleRateHz)
+      if (sampleRate) parts.push(sampleRate)
+      const channels = formatChannels(variant.audioChannels)
+      if (channels) parts.push(channels)
+      if (variant.audioSyncIssue) parts.push('desfase detectado')
+    }
+    if (variant.remuxSources) parts.push('pistas combinadas sin recodificar')
+  }
   if (parts.length === 0) {
     parts.push(
       variant.mediaType === 'audio'
@@ -73,8 +103,43 @@ export function ResultPanel({ downloadProgress, media, onDownload }: ResultPanel
   const bestDownloading = bestProgress !== undefined
   const bestPercent = typeof bestProgress === 'number' ? Math.round(bestProgress) : undefined
   const videoVariants = media.variants.filter((variant) => variant.mediaType === 'video')
+  const bestIsRemuxed = Boolean(bestVariant.remuxSources)
   const hasTechnicalComparison =
     videoVariants.length > 1 && videoVariants.every((variant) => variant.metadataVerified)
+  const hasAudioComparison =
+    media.mediaType === 'video'
+    && videoVariants.length > 1
+    && videoVariants.every((variant) => variant.audioMetadataVerified)
+  const bestAudioVerified = Boolean(
+    bestVariant.mediaType === 'video'
+    && bestVariant.audioMetadataVerified
+    && bestVariant.hasAudio
+    && bestVariant.audioSyncIssue === false,
+  )
+  const maximumVideoPixels = Math.max(
+    0,
+    ...videoVariants.map((variant) => (variant.width ?? 0) * (variant.height ?? 0)),
+  )
+  const bestVideoPixels = (bestVariant.width ?? 0) * (bestVariant.height ?? 0)
+  const audioWasPrioritized = Boolean(
+    media.mediaType === 'video'
+    && bestVariant.mediaType === 'video'
+    && bestVideoPixels > 0
+    && bestVideoPixels < maximumVideoPixels
+    && videoVariants.some((variant) => {
+      const pixels = (variant.width ?? 0) * (variant.height ?? 0)
+      const minimumHealthyAudio = variant.audioChannels === 1 ? 32_000 : 48_000
+      return pixels > bestVideoPixels && (
+        variant.hasAudio === false
+        || variant.audioSyncIssue === true
+        || Boolean(
+          variant.hasAudio
+          && variant.audioBitrateBps
+          && variant.audioBitrateBps < minimumHealthyAudio,
+        )
+      )
+    })
+  )
   const bestDimensionsVerified = Boolean(
     bestVariant.metadataVerified && bestVariant.width && bestVariant.height,
   )
@@ -113,14 +178,23 @@ export function ResultPanel({ downloadProgress, media, onDownload }: ResultPanel
                   ? 'Imagen pública'
                   : 'Video público'}
             </li>
+            {bestAudioVerified ? <li>Audio verificado</li> : null}
             <li>{media.variants.length} {media.variants.length === 1 ? 'opción' : 'opciones'}</li>
           </ul>
         </div>
       </div>
 
       <p className="loot-label">
-        {hasTechnicalComparison
-          ? 'Mayor resolución verificada'
+        {bestIsRemuxed
+          ? 'Mejor video + mejor audio'
+          : audioWasPrioritized && bestAudioVerified
+          ? 'Mejor equilibrio audiovisual verificado'
+          : audioWasPrioritized
+            ? 'Protección de audio aplicada'
+          : hasTechnicalComparison && hasAudioComparison
+          ? 'Mejor calidad audiovisual verificada'
+          : hasTechnicalComparison
+            ? 'Mayor resolución verificada'
           : bestDimensionsVerified
             ? 'Resolución original verificada'
             : bestDimensionsDeclared
@@ -138,8 +212,16 @@ export function ResultPanel({ downloadProgress, media, onDownload }: ResultPanel
           <span className="legendary-icon"><PixelIcon name="gem" /></span>
           <span className="loot-copy">
             <span className="loot-rarity">
-              {hasTechnicalComparison
-                ? 'Comparación técnica completa'
+              {bestIsRemuxed
+                ? 'Fusión audiovisual sin recodificar'
+                : audioWasPrioritized && bestAudioVerified
+                ? 'Audio verificado priorizado'
+                : audioWasPrioritized
+                  ? 'Audio muy comprimido evitado'
+                : hasTechnicalComparison && hasAudioComparison
+                ? 'Video y audio comparados'
+                : hasTechnicalComparison
+                  ? 'Comparación técnica de video'
                 : bestDimensionsVerified
                   ? 'Calidad fuente verificada'
                   : bestDimensionsDeclared
@@ -198,7 +280,7 @@ export function ResultPanel({ downloadProgress, media, onDownload }: ResultPanel
         <p className="slideshow-note">Los carruseles se descargan archivo por archivo para conservar su calidad.</p>
       ) : null}
       <p className="source-note">
-        Elegimos la mejor variante disponible sin recomprimir ni aumentar resolución artificialmente. Descarga solo contenido propio o con permiso.{' '}
+        Elegimos la mejor combinación disponible de imagen y audio sin recomprimir ni aumentar resolución artificialmente. Descarga solo contenido propio o con permiso.{' '}
         <a href={media.sourceUrl} target="_blank" rel="noreferrer">Ver publicación original <span aria-hidden="true">↗</span></a>
       </p>
     </section>
