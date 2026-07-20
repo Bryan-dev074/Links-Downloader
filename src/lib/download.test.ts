@@ -37,6 +37,23 @@ describe('nombres de descarga', () => {
       ),
     ).toBe('Boss fight - @hero.mp4')
   })
+
+  it('usa una base neutral cuando el proveedor no propone nombre', async () => {
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function click(
+      this: HTMLAnchorElement,
+    ) {
+      expect(this.download).toBe('links-downloader-video.mp4')
+    })
+    const fetchMock = vi.fn<typeof fetch>()
+
+    const result = await downloadVariant(
+      { ...VIDEO_VARIANT, requiresDirectDownload: true },
+      { fetchImpl: fetchMock },
+    )
+
+    expect(result.filename).toBe('links-downloader-video.mp4')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
 })
 
 describe('descarga cross-origin', () => {
@@ -101,6 +118,29 @@ describe('descarga cross-origin', () => {
 
     expect(result.method).toBe('direct')
     expect(fetchMock).not.toHaveBeenCalled()
+    expect(openMock).toHaveBeenCalledOnce()
+  })
+
+  it('corta el stream si el servidor oculta o falsea Content-Length', async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array([1, 2, 3]))
+        controller.enqueue(new Uint8Array([4, 5, 6]))
+        controller.close()
+      },
+    })
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(stream, {
+      status: 200,
+      headers: { 'content-type': 'video/mp4' },
+    }))
+    const openMock = vi.spyOn(window, 'open').mockReturnValue({ opener: null } as Window)
+
+    const result = await downloadVariant(VIDEO_VARIANT, {
+      fetchImpl: fetchMock,
+      maxBlobBytes: 4,
+    })
+
+    expect(result.method).toBe('direct')
     expect(openMock).toHaveBeenCalledOnce()
   })
 

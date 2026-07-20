@@ -10,7 +10,7 @@ export function SiteHeader() {
       </div>
       <span className="provider-badge">
         <span className="provider-badge-dot" aria-hidden="true" />
-        TikTok activo
+        TikTok + Instagram
       </span>
     </header>
   )

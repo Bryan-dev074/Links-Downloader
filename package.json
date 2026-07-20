@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Descargador móvil de enlaces con estética RPG pixel art. TikTok es el primer proveedor.",
+  "description": "Descargador móvil de TikTok e Instagram con estética RPG pixel art.",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

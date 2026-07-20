@@ -45,15 +45,19 @@ export function buildDownloadFilename(
   variant: DownloadVariant,
 ): string {
   const authorSuffix = media.author.handle ? ` - @${media.author.handle}` : ''
-  const imageSuffix = variant.imageIndex ? ` - imagen ${String(variant.imageIndex).padStart(2, '0')}` : ''
+  const itemIndex = variant.itemIndex ?? variant.imageIndex
+  const itemLabel = variant.mediaType === 'image' ? 'imagen' : 'archivo'
+  const itemSuffix = itemIndex ? ` - ${itemLabel} ${String(itemIndex).padStart(2, '0')}` : ''
   const audioSuffix = variant.mediaType === 'audio' ? ' - audio' : ''
-  return ensureExtension(`${media.title}${authorSuffix}${imageSuffix}${audioSuffix}`, variant.extension)
+  return ensureExtension(`${media.title}${authorSuffix}${itemSuffix}${audioSuffix}`, variant.extension)
 }
 
 function filenameForVariant(variant: DownloadVariant, options: DownloadOptions): string {
   if (options.filename) return ensureExtension(options.filename, variant.extension)
-  const suffix = variant.imageIndex ? `-imagen-${String(variant.imageIndex).padStart(2, '0')}` : ''
-  const base = options.filenameBase ?? `tiktok-${variant.mediaType}`
+  const itemIndex = variant.itemIndex ?? variant.imageIndex
+  const itemLabel = variant.mediaType === 'image' ? 'imagen' : 'archivo'
+  const suffix = itemIndex ? `-${itemLabel}-${String(itemIndex).padStart(2, '0')}` : ''
+  const base = options.filenameBase ?? `links-downloader-${variant.mediaType}`
   return ensureExtension(`${base}${suffix}`, variant.extension)
 }
 
@@ -136,6 +140,7 @@ async function responseToBlob(
   response: Response,
   variant: DownloadVariant,
   options: DownloadOptions,
+  maximumBytes: number,
 ): Promise<{ blob: Blob; bytes: number }> {
   const contentLengthHeader = response.headers.get('content-length')
   const parsedTotal = contentLengthHeader ? Number(contentLengthHeader) : undefined
@@ -146,6 +151,12 @@ async function responseToBlob(
 
   if (!response.body) {
     const blob = await response.blob()
+    if (blob.size > maximumBytes) {
+      throw new LinksDownloaderError(
+        'DOWNLOAD_FAILED',
+        'El archivo es demasiado grande para guardarlo temporalmente en memoria.',
+      )
+    }
     options.onProgress?.({
       loadedBytes: blob.size,
       totalBytes: totalBytes ?? blob.size,
@@ -162,10 +173,17 @@ async function responseToBlob(
     const { done, value } = await reader.read()
     if (done) break
     if (!value) continue
+    loadedBytes += value.byteLength
+    if (loadedBytes > maximumBytes) {
+      await reader.cancel()
+      throw new LinksDownloaderError(
+        'DOWNLOAD_FAILED',
+        'El archivo es demasiado grande para guardarlo temporalmente en memoria.',
+      )
+    }
     const ownedChunk = new Uint8Array(value.byteLength)
     ownedChunk.set(value)
     chunks.push(ownedChunk.buffer)
-    loadedBytes += value.byteLength
     options.onProgress?.({
       loadedBytes,
       totalBytes,
@@ -193,6 +211,9 @@ export async function downloadVariant(
   const url = validateDownloadUrl(variant.url)
   const filename = filenameForVariant(variant, options)
   const fallbackToDirect = options.fallbackToDirect ?? true
+  const maximumBlobBytes = Number.isFinite(options.maxBlobBytes) && (options.maxBlobBytes ?? 0) > 0
+    ? options.maxBlobBytes as number
+    : MAX_BLOB_DOWNLOAD_BYTES
   const requestSignal = createRequestSignal(
     options.signal,
     options.timeoutMs ?? DEFAULT_DOWNLOAD_TIMEOUT_MS,
@@ -207,7 +228,7 @@ export async function downloadVariant(
     if (
       fallbackToDirect
       && variant.sizeBytes !== undefined
-      && variant.sizeBytes > MAX_BLOB_DOWNLOAD_BYTES
+      && variant.sizeBytes > maximumBlobBytes
     ) {
       openDirectUrl(url)
       return { method: 'direct', filename }
@@ -230,7 +251,7 @@ export async function downloadVariant(
     if (
       fallbackToDirect
       && Number.isFinite(declaredBytes)
-      && declaredBytes > MAX_BLOB_DOWNLOAD_BYTES
+      && declaredBytes > maximumBlobBytes
     ) {
       try {
         await response.body?.cancel()
@@ -241,7 +262,7 @@ export async function downloadVariant(
       return { method: 'direct', filename }
     }
 
-    const { blob, bytes } = await responseToBlob(response, variant, options)
+    const { blob, bytes } = await responseToBlob(response, variant, options, maximumBlobBytes)
     triggerBlobDownload(blob, filename)
     return { method: 'blob', filename, bytes }
   } catch (error) {

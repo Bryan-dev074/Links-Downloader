@@ -32,7 +32,7 @@ export class ProviderRegistry {
     if (!provider) {
       throw new LinksDownloaderError(
         'UNSUPPORTED_PROVIDER',
-        'Por ahora Links Downloader admite enlaces de TikTok.',
+        'Links Downloader admite enlaces públicos de TikTok e Instagram.',
       )
     }
 

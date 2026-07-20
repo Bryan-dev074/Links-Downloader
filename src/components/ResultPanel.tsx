@@ -34,6 +34,12 @@ function iconForVariant(variant: DownloadVariant): PixelIconName {
   return 'video'
 }
 
+function providerLabel(provider: ResolvedMedia['provider']): string {
+  if (provider === 'tiktok') return 'TikTok'
+  if (provider === 'instagram') return 'Instagram'
+  return provider.charAt(0).toUpperCase() + provider.slice(1)
+}
+
 function variantMeta(variant: DownloadVariant): string {
   const parts: string[] = []
   if (variant.width && variant.height) parts.push(`${variant.width} × ${variant.height}`)
@@ -67,15 +73,21 @@ export function ResultPanel({ downloadProgress, media, onDownload }: ResultPanel
   const bestDownloading = bestProgress !== undefined
   const bestPercent = typeof bestProgress === 'number' ? Math.round(bestProgress) : undefined
   const videoVariants = media.variants.filter((variant) => variant.mediaType === 'video')
-  const allVideoDimensionsVerified =
-    videoVariants.length > 0 && videoVariants.every((variant) => variant.metadataVerified)
+  const hasTechnicalComparison =
+    videoVariants.length > 1 && videoVariants.every((variant) => variant.metadataVerified)
+  const bestDimensionsVerified = Boolean(
+    bestVariant.metadataVerified && bestVariant.width && bestVariant.height,
+  )
+  const bestDimensionsDeclared = Boolean(bestVariant.width && bestVariant.height)
+  const provider = providerLabel(media.provider)
+  const carouselItemCount = media.variants.filter((variant) => variant.mediaType !== 'audio').length
 
   return (
     <section className="result-section" aria-labelledby="result-title">
       <div className="result-heading-row">
         <div>
           <p className="section-kicker">Botín desbloqueado</p>
-          <h2 id="result-title" className="result-heading">Video encontrado</h2>
+          <h2 id="result-title" className="result-heading">Contenido encontrado</h2>
         </div>
         <span className="found-badge">Disponible</span>
       </div>
@@ -83,7 +95,7 @@ export function ResultPanel({ downloadProgress, media, onDownload }: ResultPanel
       <div className="video-summary">
         <div className="cover-frame">
           {media.coverUrl ? (
-            <img className="video-cover" src={media.coverUrl} alt="Portada del video" decoding="async" />
+            <img className="video-cover" src={media.coverUrl} alt="Portada del contenido" decoding="async" />
           ) : (
             <span className="cover-placeholder"><PixelIcon name="video" /></span>
           )}
@@ -93,15 +105,27 @@ export function ResultPanel({ downloadProgress, media, onDownload }: ResultPanel
           <p className="video-author">@{media.author.handle}</p>
           <p className="video-title">{media.title}</p>
           <ul className="video-facts" aria-label="Detalles del contenido">
-            <li>TikTok</li>
-            <li>{media.mediaType === 'carousel' ? `${media.images.length} imágenes` : 'Video público'}</li>
+            <li>{provider}</li>
+            <li>
+              {media.mediaType === 'carousel'
+                ? `${carouselItemCount} archivos`
+                : media.mediaType === 'image'
+                  ? 'Imagen pública'
+                  : 'Video público'}
+            </li>
             <li>{media.variants.length} {media.variants.length === 1 ? 'opción' : 'opciones'}</li>
           </ul>
         </div>
       </div>
 
       <p className="loot-label">
-        {allVideoDimensionsVerified ? 'Mayor resolución verificada' : 'Mejor variante disponible'}
+        {hasTechnicalComparison
+          ? 'Mayor resolución verificada'
+          : bestDimensionsVerified
+            ? 'Resolución original verificada'
+            : bestDimensionsDeclared
+              ? 'Resolución original disponible'
+              : 'Mejor variante disponible'}
       </p>
       <div className="legendary-slot">
         <button
@@ -114,7 +138,13 @@ export function ResultPanel({ downloadProgress, media, onDownload }: ResultPanel
           <span className="legendary-icon"><PixelIcon name="gem" /></span>
           <span className="loot-copy">
             <span className="loot-rarity">
-              {allVideoDimensionsVerified ? 'Comparación técnica completa' : 'Mejor variante'}
+              {hasTechnicalComparison
+                ? 'Comparación técnica completa'
+                : bestDimensionsVerified
+                  ? 'Calidad fuente verificada'
+                  : bestDimensionsDeclared
+                    ? 'Calidad fuente disponible'
+                    : 'Mejor variante'}
             </span>
             <span className="loot-title">
               {bestDownloading
@@ -165,11 +195,11 @@ export function ResultPanel({ downloadProgress, media, onDownload }: ResultPanel
       ) : null}
 
       {media.mediaType === 'carousel' ? (
-        <p className="slideshow-note">Los carruseles se descargan imagen por imagen para conservar su calidad.</p>
+        <p className="slideshow-note">Los carruseles se descargan archivo por archivo para conservar su calidad.</p>
       ) : null}
       <p className="source-note">
-        Elegimos entre la versión fuente y las variantes HD sin recomprimir ni aumentar resolución artificialmente. Descarga solo contenido propio o con permiso.{' '}
-        <a href={media.sourceUrl} target="_blank" rel="noreferrer">Ver original <span aria-hidden="true">↗</span></a>
+        Elegimos la mejor variante disponible sin recomprimir ni aumentar resolución artificialmente. Descarga solo contenido propio o con permiso.{' '}
+        <a href={media.sourceUrl} target="_blank" rel="noreferrer">Ver publicación original <span aria-hidden="true">↗</span></a>
       </p>
     </section>
   )

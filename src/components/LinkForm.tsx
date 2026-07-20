@@ -35,19 +35,19 @@ export function LinkForm({
 }: LinkFormProps) {
   return (
     <form className="link-form" onSubmit={onSubmit} noValidate>
-      <label className="field-label" htmlFor="tiktok-url">
-        Enlace de TikTok
-        <span className="field-hint">Video público</span>
+      <label className="field-label" htmlFor="media-url">
+        Enlace de TikTok o Instagram
+        <span className="field-hint">Contenido público</span>
       </label>
       <div className={`input-shell${error ? ' has-error' : ''}`}>
         <PixelIcon className="input-icon" name="link" />
         <input
-          id="tiktok-url"
+          id="media-url"
           className="link-input"
           type="url"
           value={input}
           onChange={(event) => onInputChange(event.currentTarget.value)}
-          placeholder="https://www.tiktok.com/@usuario/video/…"
+          placeholder="Pega un enlace de TikTok o Instagram"
           autoCapitalize="none"
           autoComplete="off"
           autoCorrect="off"
@@ -71,7 +71,7 @@ export function LinkForm({
       <button className="action-button" type="submit" disabled={loading}>
         <span className="action-button-content">
           {loading ? <span className="loading-glyph" aria-hidden="true" /> : <PixelIcon name="search" />}
-          {loading ? 'Buscando la mejor calidad…' : 'Buscar video'}
+          {loading ? 'Buscando la mejor calidad…' : 'Buscar contenido'}
         </span>
       </button>
       {loading ? (

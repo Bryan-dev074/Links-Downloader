@@ -10,11 +10,10 @@ Thumbs.db
 .idea/
 .vscode/
 
-# Keep only the original GIFs needed to reproduce the optimized sprites.
+# Keep the original GIFs needed to reproduce the three optimized sprite themes.
 pixelart/*
-!pixelart/descarga.gif
-!pixelart/descarga (1).gif
-!pixelart/descarga (2).gif
-!pixelart/descarga (3).gif
+!pixelart/*.gif
+# This unused 3 MB source has a lighter Shadow alternative for mobile delivery.
+pixelart/Shadow Sticker - Shadow - Discover & Share GIFs.gif
 
 .vercel

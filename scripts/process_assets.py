@@ -41,6 +41,7 @@ class AnimationSpec:
     output_name: str
     source_name: str
     remove_solid_background: bool
+    minimum_border_dominance: float = 0.90
 
 
 ANIMATIONS = (
@@ -48,6 +49,22 @@ ANIMATIONS = (
     AnimationSpec("ready.gif", "descarga (3).gif", True),
     AnimationSpec("loading.gif", "descarga.gif", True),
     AnimationSpec("success.gif", "descarga (1).gif", True),
+    AnimationSpec("sonic-idle.gif", "sonic chos!.gif", True),
+    AnimationSpec("sonic-loading.gif", "descarga (4).gif", True),
+    AnimationSpec(
+        "sonic-success.gif",
+        "Sonic The Hedgehog Sticker - Sonic The Hedgehog - Descubre y comparte GIF.gif",
+        True,
+        0.85,
+    ),
+    AnimationSpec("shadow-idle.gif", "descarga (5).gif", True, 0.75),
+    AnimationSpec("shadow-loading.gif", "Shadow the hedgehog run.gif", True),
+    AnimationSpec(
+        "shadow-success.gif",
+        "Imágenes, Cómics y Otras cosas de este shipp [Créditos de las imágen… #fanfic # Fanfic # amreading # books # wattpad.gif",
+        True,
+        0.85,
+    ),
 )
 
 
@@ -77,7 +94,9 @@ def _is_close(
 
 
 def remove_border_connected_background(
-    frame: Image.Image, tolerance: int = 0
+    frame: Image.Image,
+    tolerance: int = 0,
+    minimum_border_dominance: float = 0.90,
 ) -> tuple[Image.Image, tuple[int, int, int], int]:
     """Make only border-connected pixels matching the flat background transparent.
 
@@ -92,7 +111,7 @@ def remove_border_connected_background(
     border = _border_pixels(rgba)
     background, occurrences = Counter(border).most_common(1)[0]
     dominance = occurrences / len(border)
-    if dominance < 0.90:
+    if dominance < minimum_border_dominance:
         raise ValueError(
             f"Expected a solid border background, but {background} covers only "
             f"{dominance:.1%} of border pixels"
@@ -145,11 +164,15 @@ def _load_frames(source: Path) -> tuple[list[Image.Image], list[int], int]:
     durations: list[int] = []
     with Image.open(source) as animation:
         loop = int(animation.info.get("loop", 0))
-        default_duration = int(animation.info.get("duration", 100))
+        source_default_duration = int(animation.info.get("duration", 100))
+        # A few downloaded GIFs omit frame delays. Browsers disagree on whether
+        # that means 10 ms or 100 ms, so use the conventional 10 FPS fallback.
+        default_duration = source_default_duration if source_default_duration > 0 else 100
         for index in range(animation.n_frames):
             animation.seek(index)
             frames.append(animation.convert("RGBA"))
-            durations.append(int(animation.info.get("duration", default_duration)))
+            source_duration = int(animation.info.get("duration", default_duration))
+            durations.append(source_duration if source_duration > 0 else default_duration)
     return frames, durations, loop
 
 
@@ -243,7 +266,9 @@ def build_animation(spec: AnimationSpec) -> dict[str, object]:
     for frame in frames:
         if spec.remove_solid_background:
             frame, background, removed = remove_border_connected_background(
-                frame, tolerance=BACKGROUND_TOLERANCE
+                frame,
+                tolerance=BACKGROUND_TOLERANCE,
+                minimum_border_dominance=spec.minimum_border_dominance,
             )
             backgrounds.add(background)
             removed_pixels += removed

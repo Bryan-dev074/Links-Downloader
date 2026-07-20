@@ -1,7 +1,7 @@
 /** Identificador abierto para poder sumar proveedores sin cambiar el contrato. */
-export type ProviderId = 'tiktok' | (string & {})
+export type ProviderId = 'tiktok' | 'instagram' | (string & {})
 
-export type MediaType = 'video' | 'carousel'
+export type MediaType = 'video' | 'image' | 'carousel'
 export type DownloadMediaType = 'video' | 'audio' | 'image'
 export type DownloadQuality = 'best' | 'compatible' | 'audio' | 'original'
 export type VideoProviderTier = 'source' | 'hd' | 'compatible'
@@ -24,6 +24,8 @@ export interface DownloadVariant {
   /** La opción que debe mostrarse primero y recibir el tratamiento visual premium. */
   isBest: boolean
   sizeBytes?: number
+  /** Posición del archivo dentro de un carrusel, aunque sea video o imagen. */
+  itemIndex?: number
   imageIndex?: number
   /** Dimensiones reales leídas del contenedor MP4 cuando el CDN permite inspeccionarlo. */
   width?: number
@@ -59,7 +61,7 @@ export interface ResolvedMedia {
   mediaType: MediaType
   /** Siempre está deduplicado y ordenado con la mejor calidad primero. */
   variants: DownloadVariant[]
-  /** Se completa cuando TikTok entrega un carrusel de fotos. */
+  /** Se completa cuando el proveedor entrega un carrusel de fotos. */
   images: CarouselImage[]
 }
 
@@ -98,6 +100,8 @@ export interface DownloadOptions {
   fetchImpl?: typeof fetch
   /** Permite desactivar la apertura directa, por ejemplo en tests. */
   fallbackToDirect?: boolean
+  /** Umbral de memoria para Blob; al superarlo se usa la descarga directa. */
+  maxBlobBytes?: number
 }
 
 export interface DownloadResult {

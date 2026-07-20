@@ -333,6 +333,16 @@ a:focus-visible {
   transition: width 260ms ease, height 260ms ease;
 }
 
+.sprite-stage[data-sprite-theme='shadow'] .sprite-image {
+  filter:
+    brightness(1.24)
+    saturate(1.14)
+    drop-shadow(0 12px 14px rgba(0, 0, 0, 0.46))
+    drop-shadow(0 0 9px rgba(210, 54, 74, 0.42));
+  transform: scale(1.24);
+  transform-origin: center bottom;
+}
+
 .is-compact .sprite-image {
   width: 118px;
   height: 112px;
@@ -785,7 +795,9 @@ a:focus-visible {
   inset: -60%;
   content: '';
   background: conic-gradient(from 0deg, transparent 0 32%, var(--gold-bright) 36% 39%, transparent 43% 82%, var(--gold) 86% 89%, transparent 93%);
-  animation: legendary-border 3.8s steps(16, end) infinite;
+  animation: legendary-border 3.8s linear infinite;
+  transform: translateZ(0) rotate(0turn);
+  will-change: transform;
 }
 
 .legendary-slot:focus-within .legendary-button {
@@ -819,13 +831,15 @@ a:focus-visible {
   position: absolute;
   top: -30%;
   bottom: -30%;
-  left: -35%;
+  left: 0;
   width: 20%;
   content: '';
   pointer-events: none;
   background: linear-gradient(90deg, transparent, rgba(241, 212, 119, 0.18), transparent);
-  transform: skewX(-18deg);
-  animation: loot-shine 3.8s steps(12, end) infinite;
+  animation: loot-shine 3.8s linear infinite;
+  backface-visibility: hidden;
+  transform: translate3d(-190%, 0, 0) skewX(-18deg);
+  will-change: transform;
 }
 
 .legendary-button:hover:not(:disabled) {
@@ -1117,12 +1131,12 @@ a:focus-visible {
 }
 
 @keyframes legendary-border {
-  to { transform: rotate(1turn); }
+  to { transform: translateZ(0) rotate(1turn); }
 }
 
 @keyframes loot-shine {
-  0%, 16% { left: -35%; }
-  60%, 100% { left: 125%; }
+  0%, 16% { transform: translate3d(-190%, 0, 0) skewX(-18deg); }
+  60%, 100% { transform: translate3d(650%, 0, 0) skewX(-18deg); }
 }
 
 @keyframes toast-in {

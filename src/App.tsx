@@ -88,11 +88,11 @@ export function App() {
     event.preventDefault()
     const trimmedInput = input.trim()
     if (!trimmedInput) {
-      setError('Pega un enlace de TikTok para continuar.')
+      setError('Pega un enlace de TikTok o Instagram para continuar.')
       return
     }
     if (!isSupportedLink(trimmedInput)) {
-      setError('Ese enlace no parece ser de un video de TikTok. Copia el enlace completo e inténtalo otra vez.')
+      setError('Ese enlace no parece ser de TikTok o Instagram. Copia el enlace completo e inténtalo otra vez.')
       return
     }
 
@@ -156,10 +156,10 @@ export function App() {
         <section className="quest-card" aria-labelledby="page-title">
           <SpriteStage state={stageState} compact={Boolean(media)} />
           <div className="hero-copy">
-            <p className="eyebrow">Misión de descarga · TikTok</p>
+            <p className="eyebrow">Misión de descarga · TikTok + Instagram</p>
             <h1 id="page-title" className="hero-title">Tu enlace. Su <span className="gold-word">mejor versión.</span></h1>
             <p className="hero-description">
-              Pega un TikTok. Encontramos la mayor calidad disponible y la dejamos arriba, lista para descargar.
+              Pega un enlace público. Encontramos la mayor calidad disponible y la dejamos arriba, lista para descargar.
             </p>
           </div>
           <LinkForm
@@ -180,7 +180,7 @@ export function App() {
         ) : null}
       </main>
       <footer className="site-footer">
-        <strong>Links Downloader</strong> no está afiliado a TikTok. Solo procesa enlaces públicos y no almacena videos.
+        <strong>Links Downloader</strong> no está afiliado a TikTok ni Instagram. Solo procesa enlaces públicos y no almacena archivos.
       </footer>
       {toast ? (
         <div

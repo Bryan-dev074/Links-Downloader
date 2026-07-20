@@ -15,7 +15,7 @@ export function extractUrl(input: string): URL {
   } catch {
     throw new LinksDownloaderError(
       'INVALID_URL',
-      'Pega un enlace completo de TikTok que empiece con http:// o https://.',
+      'Pega un enlace completo que empiece con http:// o https://.',
     )
   }
 
