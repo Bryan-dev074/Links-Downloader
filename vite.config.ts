@@ -3,7 +3,9 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  base: '/Links-Downloader/',
+  // Relative assets let the same static build run at a Vercel root domain or
+  // inside a GitHub Pages project path.
+  base: './',
   build: {
     target: 'es2022',
     cssCodeSplit: true,

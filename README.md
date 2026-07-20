@@ -44,27 +44,23 @@ pnpm preview
 
 El resultado compilado se genera en `dist/`.
 
-## Publicación en GitHub Pages
-
-El repositorio incluye un workflow de GitHub Actions que compila el proyecto y publica `dist/` con las acciones oficiales de GitHub Pages.
-
-1. En GitHub, abre **Settings → Pages**.
-2. En **Build and deployment**, selecciona **GitHub Actions** como origen.
-3. Envía los cambios a la rama `main` o ejecuta el workflow manualmente.
-
-Como este es un sitio de proyecto, la configuración de Vite debe mantener `base: "/Links-Downloader/"`. Si el repositorio vuelve a cambiar de nombre, actualiza esa ruta antes de publicar.
-
-La interfaz puede funcionar desde GitHub Pages porque la consulta a TikWM se realiza en el navegador. Esto sigue sujeto a que el proveedor permita solicitudes CORS desde el dominio publicado.
-
 ## Publicación en Vercel
 
-Vercel también puede importar este repositorio directamente. Usa:
+La versión de producción está publicada en:
+
+**https://links-downloader.vercel.app/**
+
+El proyecto de Vercel está conectado al repositorio de GitHub, por lo que cada cambio enviado a `main` genera un nuevo despliegue automáticamente. La configuración detectada es:
 
 - **Build Command:** `pnpm build`
 - **Output Directory:** `dist`
 - **Node.js:** 24
 
-Para la versión actual, GitHub Pages es suficiente mientras la API pública acepte solicitudes del navegador. Vercel no aporta una ventaja funcional al frontend estático. No uses Vercel Functions para hacer scraping o retransmitir archivos multimedia: además del costo y los límites técnicos, su política de uso puede prohibir ese tipo de proxy. Una integración futura con secretos deberá usar un proveedor autorizado y un alojamiento cuyo contrato permita expresamente esa carga. Nunca incluyas claves privadas en variables `VITE_*`, porque Vite las expone en el bundle del cliente.
+La aplicación sigue siendo completamente estática: Vercel sirve el frontend y la consulta a TikWM ocurre directamente desde el navegador. No uses Vercel Functions para hacer scraping o retransmitir archivos multimedia. Una integración futura con secretos deberá usar un proveedor autorizado y un alojamiento cuyo contrato permita expresamente esa carga. Nunca incluyas claves privadas en variables `VITE_*`, porque Vite las expone en el bundle del cliente.
+
+## GitHub Pages opcional
+
+La compilación usa rutas relativas (`base: "./"`), así que el mismo `dist/` también puede publicarse dentro de una ruta de proyecto de GitHub Pages. GitHub Pages queda como alternativa manual y no es necesario para la versión de producción actual.
 
 ## Límites y uso responsable
 
