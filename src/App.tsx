@@ -105,7 +105,7 @@ export function App() {
     setDownloadProgress({})
 
     try {
-      const result = await resolveLink(trimmedInput, { signal: controller.signal, timeoutMs: 20_000 })
+      const result = await resolveLink(trimmedInput, { signal: controller.signal, timeoutMs: 35_000 })
       setMedia(result)
     } catch (requestError) {
       if (!controller.signal.aborted) setError(messageForError(requestError))

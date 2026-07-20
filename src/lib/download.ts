@@ -115,6 +115,23 @@ function openDirectUrl(url: string): void {
   }
 }
 
+function triggerDirectAttachment(url: string, filename: string): void {
+  if (typeof document === 'undefined') {
+    throw new LinksDownloaderError(
+      'DOWNLOAD_FAILED',
+      'No se pudo iniciar la descarga directa.',
+    )
+  }
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  anchor.rel = 'noopener noreferrer'
+  anchor.hidden = true
+  document.body.append(anchor)
+  anchor.click()
+  anchor.remove()
+}
+
 async function responseToBlob(
   response: Response,
   variant: DownloadVariant,
@@ -182,6 +199,11 @@ export async function downloadVariant(
   )
 
   try {
+    if (fallbackToDirect && variant.requiresDirectDownload) {
+      triggerDirectAttachment(url, filename)
+      return { method: 'direct', filename }
+    }
+
     if (
       fallbackToDirect
       && variant.sizeBytes !== undefined

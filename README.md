@@ -8,16 +8,17 @@ Una experiencia web **mobile-first** para resolver y descargar videos de TikTok 
 ## Qué ofrece
 
 - Flujo directo: pegar un enlace, resolver el video y elegir una descarga.
-- Opción de mejor calidad destacada antes que las alternativas.
+- Compara la variante fuente, HD y compatible; la de mayor resolución real queda arriba.
+- Muestra resolución, codec, FPS, bitrate estimado y tamaño cuando están disponibles.
 - Experiencia adaptable, diseñada principalmente para teléfonos.
 - Interfaz temática con animaciones y estados visuales durante la resolución.
-- Despliegue estático: no requiere una base de datos ni un servidor propio en esta versión.
+- Despliegue en Vercel sin base de datos; una función acotada respalda la lectura de metadatos.
 
-La aplicación solicita siempre la mejor variante que el servicio de resolución declare disponible. La calidad final depende del video original, de las variantes expuestas por TikTok y de la respuesta del proveedor externo; por eso no puede garantizarse una resolución, tasa de bits o disponibilidad concreta.
+La aplicación no recomprime ni reescala el contenido. Inspecciona los MP4 disponibles y prioriza resolución; si dos variantes tienen la misma resolución, usa FPS, origen y bitrate estimado para desempatar. La calidad final sigue dependiendo del archivo publicado en TikTok y de lo que exponga el proveedor externo, por lo que no puede garantizarse una resolución o disponibilidad concreta.
 
 ## Cómo funciona
 
-La primera versión consulta la API pública de **TikWM** directamente desde el navegador. No usa claves, cuentas ni un backend propio. Cuando la resolución no está disponible, la interfaz se degrada de forma segura y permite volver al enlace original de TikTok.
+La aplicación consulta desde el navegador tanto el endpoint HD como el flujo de tareas de calidad fuente de **TikWM**. Después lee metadatos del contenedor MP4 mediante solicitudes parciales o `preload="metadata"`, elige la mejor variante comprobada y conserva las alternativas útiles. Una Vercel Function restringida a `v16.tokcdn.com` puede leer como máximo 1,5 MiB del MP4 para comprobar resolución, codec y FPS cuando el navegador no entiende el codec. No retransmite el video ni modifica sus bytes. Si el flujo fuente falla, vuelve automáticamente a HD/compatible.
 
 TikWM es un servicio externo y no oficial. Puede cambiar, limitar solicitudes, sufrir interrupciones o dejar de admitir peticiones desde el navegador sin previo aviso. Links Downloader no controla su disponibilidad ni está afiliado con TikWM o TikTok.
 
@@ -56,11 +57,11 @@ El proyecto de Vercel está conectado al repositorio de GitHub, por lo que cada 
 - **Output Directory:** `dist`
 - **Node.js:** 24
 
-La aplicación sigue siendo completamente estática: Vercel sirve el frontend y la consulta a TikWM ocurre directamente desde el navegador. No uses Vercel Functions para hacer scraping o retransmitir archivos multimedia. Una integración futura con secretos deberá usar un proveedor autorizado y un alojamiento cuyo contrato permita expresamente esa carga. Nunca incluyas claves privadas en variables `VITE_*`, porque Vite las expone en el bundle del cliente.
+Vercel sirve el frontend y una función mínima de metadatos; la consulta a TikWM y la descarga ocurren directamente desde el navegador. La función rechaza otros hosts, redirecciones y respuestas completas para que no se convierta en un proxy multimedia. Una integración futura con secretos deberá usar un proveedor autorizado y un alojamiento cuyo contrato permita expresamente esa carga. Nunca incluyas claves privadas en variables `VITE_*`, porque Vite las expone en el bundle del cliente.
 
 ## GitHub Pages opcional
 
-La compilación usa rutas relativas (`base: "./"`), así que el mismo `dist/` también puede publicarse dentro de una ruta de proyecto de GitHub Pages. GitHub Pages queda como alternativa manual y no es necesario para la versión de producción actual.
+La compilación usa rutas relativas (`base: "./"`), así que el mismo `dist/` también puede publicarse dentro de una ruta de proyecto de GitHub Pages. Allí seguirá funcionando la inspección directa del navegador, pero no estará disponible el respaldo de metadatos de Vercel para codecs que el dispositivo no pueda leer; por eso Vercel es la opción de producción recomendada.
 
 ## Límites y uso responsable
 

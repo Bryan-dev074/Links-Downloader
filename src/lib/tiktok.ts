@@ -10,10 +10,15 @@ import type {
 import { LinksDownloaderError, isAbortError } from './errors'
 import { createRequestSignal } from './request'
 import { extractUrl, optionalUrl } from './url'
+import { compareVideoQuality, estimateBitrate, probeMp4Video } from './video-quality'
 
 const TIKWM_API_URL = 'https://www.tikwm.com/api/'
-const DEFAULT_TIMEOUT_MS = 18_000
+const TIKWM_ORIGINAL_SUBMIT_URL = 'https://www.tikwm.com/api/video/task/submit'
+const TIKWM_ORIGINAL_RESULT_URL = 'https://www.tikwm.com/api/video/task/result'
+const DEFAULT_TIMEOUT_MS = 30_000
 const TIKWM_ASSET_BASE = 'https://www.tikwm.com'
+const ORIGINAL_POLL_ATTEMPTS = 18
+const ORIGINAL_POLL_INTERVAL_MS = 900
 
 type UnknownRecord = Record<string, unknown>
 
@@ -119,10 +124,83 @@ function createVariant(
   options: Pick<DownloadVariant, 'mediaType' | 'extension' | 'mimeType' | 'isBest'> & {
     sizeBytes?: number
     imageIndex?: number
+    providerTier?: DownloadVariant['providerTier']
+    probeUrl?: string
+    requiresDirectDownload?: boolean
   },
 ): DownloadVariant | undefined {
   if (!url) return undefined
   return { id, label, url, quality, ...options }
+}
+
+function resolutionLabel(variant: DownloadVariant): string | undefined {
+  if (!variant.width || !variant.height) return undefined
+  return `${Math.min(variant.width, variant.height)}p`
+}
+
+function labelForVideoVariant(variant: DownloadVariant, isBest: boolean): string {
+  const resolution = resolutionLabel(variant)
+  if (isBest) return resolution ? `Máxima calidad · ${resolution}` : 'Máxima calidad disponible'
+  if (variant.providerTier === 'source') {
+    return resolution ? `Archivo fuente · ${resolution}` : 'Archivo fuente · Original'
+  }
+  if (variant.providerTier === 'hd') {
+    return resolution ? `Alta resolución · ${resolution}` : 'Alta resolución del proveedor'
+  }
+  return resolution ? `Compatible · ${resolution}` : 'Calidad compatible'
+}
+
+function semanticVideoFingerprint(variant: DownloadVariant): string | undefined {
+  if (
+    !variant.sizeBytes
+    || !variant.width
+    || !variant.height
+    || !variant.codec
+    || !variant.fps
+  ) return undefined
+  return [
+    variant.sizeBytes,
+    variant.width,
+    variant.height,
+    variant.codec,
+    Math.round(variant.fps * 100) / 100,
+  ].join(':')
+}
+
+/** Marca como premium la variante de mayor resolución real y deduplica copias idénticas. */
+export function rankVideoVariants(
+  variants: DownloadVariant[],
+  durationSeconds?: number,
+): DownloadVariant[] {
+  const ranked = variants
+    .map((variant) => ({
+      ...variant,
+      bitrateBps: variant.bitrateBps ?? estimateBitrate(variant.sizeBytes, durationSeconds),
+      isBest: false,
+    }))
+    .sort(compareVideoQuality)
+
+  const seenUrls = new Set<string>()
+  const seenFingerprints = new Set<string>()
+  const unique = ranked.filter((variant) => {
+    if (seenUrls.has(variant.url)) return false
+    seenUrls.add(variant.url)
+    const fingerprint = semanticVideoFingerprint(variant)
+    if (!fingerprint) return true
+    if (seenFingerprints.has(fingerprint)) return false
+    seenFingerprints.add(fingerprint)
+    return true
+  })
+
+  return unique.map((variant, index) => {
+    const isBest = index === 0
+    return {
+      ...variant,
+      quality: isBest ? 'best' : variant.providerTier === 'compatible' ? 'compatible' : 'original',
+      isBest,
+      label: labelForVideoVariant(variant, isBest),
+    }
+  })
 }
 
 function dedupeAndSortVariants(variants: Array<DownloadVariant | undefined>): DownloadVariant[] {
@@ -270,12 +348,13 @@ export function normalizeTikWmResponse(payload: unknown, sourceUrl: string): Res
     })
   } else {
     variants.push(
-      createVariant('video-hd', 'Mejor calidad · HD', hdUrl, 'best', {
+      createVariant('video-hd', 'Alta resolución del proveedor', hdUrl, 'best', {
         mediaType: 'video',
         extension: 'mp4',
         mimeType: 'video/mp4',
         isBest: true,
         sizeBytes: numberValue(data.hd_size),
+        providerTier: 'hd',
       }),
     )
     variants.push(
@@ -290,6 +369,7 @@ export function normalizeTikWmResponse(payload: unknown, sourceUrl: string): Res
           mimeType: 'video/mp4',
           isBest: !hdUrl,
           sizeBytes: numberValue(data.size),
+          providerTier: 'compatible',
         },
       ),
     )
@@ -330,6 +410,123 @@ export function normalizeTikWmResponse(payload: unknown, sourceUrl: string): Res
   }
 }
 
+interface OriginalTaskState {
+  status?: number
+  taskId?: string
+  variant?: DownloadVariant
+}
+
+function originalTaskState(payload: unknown): OriginalTaskState {
+  if (!isRecord(payload) || numberValue(payload.code) !== 0 || !isRecord(payload.data)) return {}
+  const data = payload.data
+  const detail = isRecord(data.detail) ? data.detail : undefined
+  const url = detail ? assetUrl(detail.download_url) : undefined
+  const probeUrl = detail ? assetUrl(detail.play_url) : undefined
+  return {
+    status: numberValue(data.status),
+    taskId: stringValue(data.task_id),
+    variant: url
+      ? createVariant('video-source', 'Archivo fuente · Original', url, 'original', {
+          mediaType: 'video',
+          extension: 'mp4',
+          mimeType: 'video/mp4',
+          isBest: false,
+          sizeBytes: detail ? numberValue(detail.size) : undefined,
+          providerTier: 'source',
+          probeUrl,
+          requiresDirectDownload: true,
+        })
+      : undefined,
+  }
+}
+
+function waitForPoll(signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.reject(signal.reason)
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, ORIGINAL_POLL_INTERVAL_MS)
+    const onAbort = () => {
+      clearTimeout(timer)
+      reject(signal.reason)
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
+async function requestOriginalVariant(
+  sourceUrl: string,
+  fetchImpl: typeof fetch,
+  signal: AbortSignal,
+): Promise<DownloadVariant | undefined> {
+  const form = new FormData()
+  form.append('url', sourceUrl)
+  const submitResponse = await fetchImpl(TIKWM_ORIGINAL_SUBMIT_URL, {
+    method: 'POST',
+    body: form,
+    headers: { Accept: 'application/json' },
+    credentials: 'omit',
+    signal,
+  })
+  if (!submitResponse.ok) return undefined
+
+  const submitted = originalTaskState(await submitResponse.json())
+  if (submitted.status === 2 && submitted.variant) return submitted.variant
+  if (!submitted.taskId) return undefined
+
+  const endpoint = new URL(TIKWM_ORIGINAL_RESULT_URL)
+  endpoint.searchParams.set('task_id', submitted.taskId)
+  for (let attempt = 0; attempt < ORIGINAL_POLL_ATTEMPTS; attempt += 1) {
+    const resultResponse = await fetchImpl(endpoint, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      credentials: 'omit',
+      signal,
+    })
+    if (!resultResponse.ok) return undefined
+    const state = originalTaskState(await resultResponse.json())
+    if (state.status === 2) return state.variant
+    if (state.status !== undefined && state.status > 2) return undefined
+    if (attempt < ORIGINAL_POLL_ATTEMPTS - 1) await waitForPoll(signal)
+  }
+  return undefined
+}
+
+async function enrichVideoQuality(
+  media: ResolvedMedia,
+  fetchImpl: typeof fetch,
+  signal: AbortSignal,
+  originalVariant?: DownloadVariant,
+  videoProbeImpl: NonNullable<ResolveOptions['videoProbeImpl']> = probeMp4Video,
+): Promise<ResolvedMedia> {
+  const videoVariants = media.variants.filter((variant) => variant.mediaType === 'video')
+  if (originalVariant) videoVariants.push(originalVariant)
+  const probeCache = new Map<string, ReturnType<typeof probeMp4Video>>()
+  const enriched = await Promise.all(
+    videoVariants.map(async (variant) => {
+      let probe = probeCache.get(variant.url)
+      if (!probe) {
+        probe = videoProbeImpl(variant.probeUrl ?? variant.url, {
+          fetchImpl,
+          signal,
+          preferMediaElement: variant.requiresDirectDownload,
+        })
+        probeCache.set(variant.url, probe)
+      }
+      const metadata = await probe
+      return {
+        ...variant,
+        ...metadata,
+        metadataVerified: Boolean(metadata?.width && metadata.height),
+      }
+    }),
+  )
+  const rankedVideos = rankVideoVariants(enriched, media.durationSeconds)
+  const nonVideoVariants = media.variants.filter((variant) => variant.mediaType !== 'video')
+  return { ...media, variants: [...rankedVideos, ...nonVideoVariants] }
+}
+
 export async function resolveTikTok(
   input: string,
   options: ResolveOptions = {},
@@ -366,7 +563,26 @@ export async function resolveTikTok(
       )
     }
 
-    return normalizeTikWmResponse(payload, link.url)
+    const media = normalizeTikWmResponse(payload, link.url)
+    if (media.mediaType !== 'video') return media
+
+    let originalVariant: DownloadVariant | undefined
+    try {
+      originalVariant = await requestOriginalVariant(link.url, options.fetchImpl ?? fetch, requestSignal.signal)
+    } catch {
+      // El servicio de fuente es experimental: la variante HD normal sigue disponible.
+    }
+
+    if (options.signal?.aborted) {
+      throw new LinksDownloaderError('ABORTED', 'La búsqueda fue cancelada.')
+    }
+    return enrichVideoQuality(
+      media,
+      options.fetchImpl ?? fetch,
+      requestSignal.signal,
+      originalVariant,
+      options.videoProbeImpl,
+    )
   } catch (error) {
     if (error instanceof LinksDownloaderError) throw error
     if (options.signal?.aborted) {

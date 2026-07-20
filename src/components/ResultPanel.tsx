@@ -22,6 +22,12 @@ function formatBytes(bytes?: number): string | undefined {
   return `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`
 }
 
+function formatBitrate(bitsPerSecond?: number): string | undefined {
+  if (!bitsPerSecond || bitsPerSecond <= 0) return undefined
+  if (bitsPerSecond < 1_000_000) return `${Math.round(bitsPerSecond / 1000)} kbit/s`
+  return `${(bitsPerSecond / 1_000_000).toFixed(2).replace(/0$/, '')} Mbit/s`
+}
+
 function iconForVariant(variant: DownloadVariant): PixelIconName {
   if (variant.mediaType === 'audio') return 'audio'
   if (variant.mediaType === 'image') return 'image'
@@ -29,12 +35,21 @@ function iconForVariant(variant: DownloadVariant): PixelIconName {
 }
 
 function variantMeta(variant: DownloadVariant): string {
-  const detail = variant.mediaType === 'audio'
-    ? 'Pista de audio'
-    : variant.quality === 'compatible'
-      ? 'Alta compatibilidad'
-      : variant.label
-  const parts = [detail]
+  const parts: string[] = []
+  if (variant.width && variant.height) parts.push(`${variant.width} × ${variant.height}`)
+  if (variant.codec) parts.push(variant.codec)
+  if (variant.fps && variant.fps >= 1) parts.push(`${Math.round(variant.fps)} FPS`)
+  const bitrate = formatBitrate(variant.bitrateBps)
+  if (bitrate) parts.push(`~${bitrate}`)
+  if (parts.length === 0) {
+    parts.push(
+      variant.mediaType === 'audio'
+        ? 'Pista de audio'
+        : variant.quality === 'compatible'
+          ? 'Alta compatibilidad'
+          : variant.label,
+    )
+  }
   parts.push(variant.extension.toUpperCase())
   const size = formatBytes(variant.sizeBytes)
   if (size) parts.push(size)
@@ -51,6 +66,9 @@ export function ResultPanel({ downloadProgress, media, onDownload }: ResultPanel
   const bestProgress = downloadProgress[bestVariant.id]
   const bestDownloading = bestProgress !== undefined
   const bestPercent = typeof bestProgress === 'number' ? Math.round(bestProgress) : undefined
+  const videoVariants = media.variants.filter((variant) => variant.mediaType === 'video')
+  const allVideoDimensionsVerified =
+    videoVariants.length > 0 && videoVariants.every((variant) => variant.metadataVerified)
 
   return (
     <section className="result-section" aria-labelledby="result-title">
@@ -82,7 +100,9 @@ export function ResultPanel({ downloadProgress, media, onDownload }: ResultPanel
         </div>
       </div>
 
-      <p className="loot-label">Mejor calidad disponible</p>
+      <p className="loot-label">
+        {allVideoDimensionsVerified ? 'Mayor resolución verificada' : 'Mejor variante disponible'}
+      </p>
       <div className="legendary-slot">
         <button
           className="legendary-button"
@@ -93,11 +113,13 @@ export function ResultPanel({ downloadProgress, media, onDownload }: ResultPanel
         >
           <span className="legendary-icon"><PixelIcon name="gem" /></span>
           <span className="loot-copy">
-            <span className="loot-rarity">Mejor calidad</span>
+            <span className="loot-rarity">
+              {allVideoDimensionsVerified ? 'Comparación técnica completa' : 'Mejor variante'}
+            </span>
             <span className="loot-title">
               {bestDownloading
                 ? bestPercent === undefined ? 'Preparando descarga…' : `Descargando · ${bestPercent}%`
-                : 'Descargar mejor calidad'}
+                : 'Descargar máxima calidad'}
             </span>
             <span className="loot-spec">{variantMeta(bestVariant)}</span>
           </span>
@@ -146,7 +168,7 @@ export function ResultPanel({ downloadProgress, media, onDownload }: ResultPanel
         <p className="slideshow-note">Los carruseles se descargan imagen por imagen para conservar su calidad.</p>
       ) : null}
       <p className="source-note">
-        Descarga solo contenido propio o con permiso. Si el guardado automático no está disponible, abriremos el archivo directo.{' '}
+        Elegimos entre la versión fuente y las variantes HD sin recomprimir ni aumentar resolución artificialmente. Descarga solo contenido propio o con permiso.{' '}
         <a href={media.sourceUrl} target="_blank" rel="noreferrer">Ver original <span aria-hidden="true">↗</span></a>
       </p>
     </section>

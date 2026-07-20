@@ -104,6 +104,18 @@ describe('descarga cross-origin', () => {
     expect(openMock).toHaveBeenCalledOnce()
   })
 
+  it('abre el archivo fuente directamente para conservar el gesto del usuario', async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+    const clickMock = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    const sourceVariant = { ...VIDEO_VARIANT, requiresDirectDownload: true }
+
+    const result = await downloadVariant(sourceVariant, { fetchImpl: fetchMock })
+
+    expect(result.method).toBe('direct')
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(clickMock).toHaveBeenCalledOnce()
+  })
+
   it('no abre otra pestaña cuando el usuario cancela', async () => {
     const controller = new AbortController()
     controller.abort()
