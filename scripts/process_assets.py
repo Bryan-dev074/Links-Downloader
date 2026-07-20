@@ -46,7 +46,7 @@ class AnimationSpec:
     square_canvas: bool = True
     passthrough: bool = False
     allow_opaque_canvas: bool = False
-    allow_empty_frames: bool = False
+    frame_indices: tuple[int, ...] | None = None
 
 
 ANIMATIONS = (
@@ -54,8 +54,9 @@ ANIMATIONS = (
         "brand-portal.gif",
         "foozle-portal-cc0.gif",
         False,
-        passthrough=True,
-        allow_empty_frames=True,
+        # The source ends with a one-shot flash. Its first five frames form a
+        # calmer vortex loop that never makes the header mark disappear.
+        frame_indices=(0, 1, 2, 3, 4),
     ),
     AnimationSpec("idle.gif", "descarga (2).gif", False),
     AnimationSpec("ready.gif", "descarga (3).gif", True),
@@ -293,6 +294,15 @@ def build_animation(spec: AnimationSpec) -> dict[str, object]:
         raise FileNotFoundError(f"Missing source animation: {source}")
 
     frames, durations, loop = _load_frames(source)
+    if spec.frame_indices is not None:
+        invalid_indices = [
+            index for index in spec.frame_indices if index >= len(frames)
+        ]
+        if invalid_indices:
+            raise IndexError(f"{source.name}: invalid frame indices {invalid_indices}")
+        frames = [frames[index] for index in spec.frame_indices]
+        durations = [durations[index] for index in spec.frame_indices]
+
     backgrounds: set[tuple[int, int, int]] = set()
     removed_pixels = 0
     if spec.passthrough:
@@ -345,18 +355,28 @@ def build_animation(spec: AnimationSpec) -> dict[str, object]:
         "backgrounds": sorted(backgrounds),
         "removed_pixels": removed_pixels,
         "allow_opaque_canvas": spec.allow_opaque_canvas,
-        "allow_empty_frames": spec.allow_empty_frames,
     }
 
 
 def _base_mark() -> Image.Image:
-    """Use the representative frame of the CC0 animated portal as the app mark."""
+    """Crop the CC0 portal tightly enough to stay legible at favicon size."""
 
     source = SOURCE_DIR / "foozle-portal-cc0.gif"
     if not source.is_file():
         raise FileNotFoundError(f"Missing brand mark source: {source}")
     with Image.open(source) as image:
-        return image.convert("RGBA")
+        rgba = image.convert("RGBA")
+
+    bounds = rgba.getchannel("A").getbbox()
+    if bounds is None:
+        raise ValueError(f"Brand mark source contains no visible pixels: {source}")
+    cropped = rgba.crop(bounds)
+    icon_padding = 2
+    side = max(cropped.size) + icon_padding * 2
+    canvas = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+    offset = ((side - cropped.width) // 2, (side - cropped.height) // 2)
+    canvas.alpha_composite(cropped, offset)
+    return canvas
 
 
 def _nearest_scale(image: Image.Image, size: int) -> Image.Image:
@@ -409,7 +429,6 @@ def validate_animation(record: dict[str, object]) -> dict[str, object]:
     path = OUTPUT_DIR / str(record["name"])
     poster_path = OUTPUT_DIR / str(record["poster_name"])
     allow_opaque_canvas = bool(record.get("allow_opaque_canvas"))
-    allow_empty_frames = bool(record.get("allow_empty_frames"))
     with Image.open(path) as animation:
         frame_count = animation.n_frames
         if frame_count != record["expected_frames"]:
@@ -433,7 +452,7 @@ def validate_animation(record: dict[str, object]) -> dict[str, object]:
                 raise AssertionError(f"{path.name}: frame {index} has non-binary GIF alpha")
             transparent = alpha.tobytes().count(0)
             opaque = alpha.tobytes().count(255)
-            if opaque == 0 and not allow_empty_frames:
+            if opaque == 0:
                 raise AssertionError(f"{path.name}: frame {index} is unexpectedly empty")
             if transparent == 0 and not allow_opaque_canvas:
                 raise AssertionError(f"{path.name}: frame {index} lacks mixed alpha coverage")
@@ -448,9 +467,6 @@ def validate_animation(record: dict[str, object]) -> dict[str, object]:
                 f"{path.name}: duration sequence changed from "
                 f"{record['expected_durations']} to {durations}"
             )
-        if not any(opaque_counts):
-            raise AssertionError(f"{path.name}: animation contains no visible pixels")
-
     output_bytes = path.stat().st_size
     if output_bytes <= 0 or output_bytes > 2_000_000:
         raise AssertionError(f"{path.name}: implausible output weight ({output_bytes} bytes)")
@@ -495,6 +511,15 @@ def validate_animation(record: dict[str, object]) -> dict[str, object]:
 
 
 def validate_icons(paths: list[Path]) -> None:
+    def assert_visual_coverage(image: Image.Image, label: str) -> None:
+        bounds = image.getchannel("A").getbbox()
+        if bounds is None:
+            raise AssertionError(f"{label} contains no visible pixels")
+        visible_width = bounds[2] - bounds[0]
+        visible_height = bounds[3] - bounds[1]
+        if visible_width < image.width * 0.8 or visible_height < image.height * 0.8:
+            raise AssertionError(f"{label} leaves too much transparent padding")
+
     favicon, icon_192, icon_512 = paths
     with Image.open(favicon) as icon:
         sizes = set(icon.ico.sizes())
@@ -504,12 +529,14 @@ def validate_icons(paths: list[Path]) -> None:
             rgba = icon.ico.getimage(size).convert("RGBA")
             if rgba.getpixel((0, 0))[3] != 0 or rgba.getchannel("A").getextrema() != (0, 255):
                 raise AssertionError(f"favicon.ico {size} lacks valid transparency")
+            assert_visual_coverage(rgba, f"favicon.ico {size}")
 
     for path, expected_size in ((icon_192, (192, 192)), (icon_512, (512, 512))):
         with Image.open(path) as icon:
             rgba = icon.convert("RGBA")
             if icon.size != expected_size or rgba.getchannel("A").getextrema() != (0, 255):
                 raise AssertionError(f"{path.name} failed size/alpha validation")
+            assert_visual_coverage(rgba, path.name)
 
 
 def validate_cursor(path: Path) -> None:

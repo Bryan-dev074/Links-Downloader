@@ -81,7 +81,7 @@ La compilación usa rutas relativas (`base: "./"`), así que el mismo `dist/` ta
 
 ## Recurso de marca
 
-El portal animado de la cabecera procede de [Pixel Magic Effects de Foozle](https://foozlecc.itch.io/pixel-magic-sprite-effects) y se distribuye bajo licencia [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). El GIF se guarda localmente para no depender de recursos externos en producción.
+El portal animado de la cabecera procede de [Pixel Magic Effects de Foozle](https://foozlecc.itch.io/pixel-magic-sprite-effects) y se distribuye bajo licencia [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). El GIF se guarda localmente y se adapta a un bucle ambiental continuo para no depender de recursos externos ni introducir parpadeos en producción.
 
 ## Roadmap orientativo
 
