@@ -19,7 +19,7 @@ from shutil import copyfile
 from typing import Iterable
 import xml.etree.ElementTree as ET
 
-from PIL import Image, ImageDraw
+from PIL import Image
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -45,9 +45,18 @@ class AnimationSpec:
     minimum_border_dominance: float = 0.90
     square_canvas: bool = True
     passthrough: bool = False
+    allow_opaque_canvas: bool = False
+    allow_empty_frames: bool = False
 
 
 ANIMATIONS = (
+    AnimationSpec(
+        "brand-portal.gif",
+        "foozle-portal-cc0.gif",
+        False,
+        passthrough=True,
+        allow_empty_frames=True,
+    ),
     AnimationSpec("idle.gif", "descarga (2).gif", False),
     AnimationSpec("ready.gif", "descarga (3).gif", True),
     AnimationSpec("loading.gif", "descarga.gif", True),
@@ -58,6 +67,7 @@ ANIMATIONS = (
         False,
         square_canvas=False,
         passthrough=True,
+        allow_opaque_canvas=True,
     ),
     AnimationSpec("knights-ready.gif", "img_4029e7269913.gif", False),
     AnimationSpec("sonic-idle.gif", "sonic chos!.gif", True),
@@ -286,9 +296,8 @@ def build_animation(spec: AnimationSpec) -> dict[str, object]:
     backgrounds: set[tuple[int, int, int]] = set()
     removed_pixels = 0
     if spec.passthrough:
-        # The panoramic campfire source is already web-optimized with compact
-        # delta frames. Re-encoding the mostly static scene would make it over
-        # seven times heavier, so preserve its exact GIF bytes.
+        # Preserve already optimized sources byte-for-byte. This retains their
+        # original timing and avoids inflating compact delta-encoded animation.
         normalized = frames
         copyfile(source, destination)
         normalized[0].save(poster, format="PNG", optimize=True)
@@ -335,51 +344,19 @@ def build_animation(spec: AnimationSpec) -> dict[str, object]:
         "source_bytes": source.stat().st_size,
         "backgrounds": sorted(backgrounds),
         "removed_pixels": removed_pixels,
-        "allow_opaque_canvas": spec.passthrough,
+        "allow_opaque_canvas": spec.allow_opaque_canvas,
+        "allow_empty_frames": spec.allow_empty_frames,
     }
 
 
 def _base_mark() -> Image.Image:
-    """Draw the Links Downloader portal-and-arrow mark on a 16 px grid."""
+    """Use the representative frame of the CC0 animated portal as the app mark."""
 
-    image = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(image)
-    outline = "#090611"
-    deep_gold = "#76572a"
-    gold = "#d6aa4a"
-    violet = "#21172f"
-    violet_light = "#654b9f"
-    arrow_shadow = "#56408e"
-    arrow = "#f1d477"
-    arrow_light = "#fff4c2"
-
-    # Octagonal portal: recognizable even at the favicon's native 16 px size.
-    draw.polygon(
-        [(5, 0), (10, 0), (15, 5), (15, 10), (10, 15), (5, 15), (0, 10), (0, 5)],
-        fill=outline,
-    )
-    draw.polygon(
-        [(5, 1), (10, 1), (14, 5), (14, 10), (10, 14), (5, 14), (1, 10), (1, 5)],
-        fill=deep_gold,
-    )
-    draw.polygon(
-        [(6, 2), (9, 2), (13, 6), (13, 9), (9, 13), (6, 13), (2, 9), (2, 6)],
-        fill=violet,
-    )
-    draw.polygon([(3, 6), (6, 3), (6, 12), (3, 9)], fill=violet_light)
-    draw.point([(4, 5), (11, 5), (3, 8), (12, 8)], fill="#9277d7")
-
-    # A download arrow crosses the portal; its one-pixel extrusion keeps the
-    # symbol readable instead of becoming another letter-shaped monogram.
-    draw.rectangle((7, 4, 9, 9), fill=arrow_shadow)
-    draw.polygon([(5, 8), (11, 8), (8, 12)], fill=arrow_shadow)
-    draw.rectangle((6, 3, 8, 8), fill=arrow)
-    draw.polygon([(4, 7), (10, 7), (7, 11)], fill=arrow)
-    draw.line([(6, 3), (7, 3), (7, 7), (9, 7)], fill=arrow_light, width=1)
-
-    draw.point((4, 2), fill="#ffe69a")
-    draw.point((11, 2), fill=gold)
-    return image
+    source = SOURCE_DIR / "foozle-portal-cc0.gif"
+    if not source.is_file():
+        raise FileNotFoundError(f"Missing brand mark source: {source}")
+    with Image.open(source) as image:
+        return image.convert("RGBA")
 
 
 def _nearest_scale(image: Image.Image, size: int) -> Image.Image:
@@ -388,7 +365,7 @@ def _nearest_scale(image: Image.Image, size: int) -> Image.Image:
 
 def build_icons() -> list[Path]:
     base = _base_mark()
-    icon_16 = base
+    icon_16 = _nearest_scale(base, 16)
     icon_32 = _nearest_scale(base, 32)
     icon_48 = _nearest_scale(base, 48)
 
@@ -432,6 +409,7 @@ def validate_animation(record: dict[str, object]) -> dict[str, object]:
     path = OUTPUT_DIR / str(record["name"])
     poster_path = OUTPUT_DIR / str(record["poster_name"])
     allow_opaque_canvas = bool(record.get("allow_opaque_canvas"))
+    allow_empty_frames = bool(record.get("allow_empty_frames"))
     with Image.open(path) as animation:
         frame_count = animation.n_frames
         if frame_count != record["expected_frames"]:
@@ -455,7 +433,9 @@ def validate_animation(record: dict[str, object]) -> dict[str, object]:
                 raise AssertionError(f"{path.name}: frame {index} has non-binary GIF alpha")
             transparent = alpha.tobytes().count(0)
             opaque = alpha.tobytes().count(255)
-            if opaque == 0 or (transparent == 0 and not allow_opaque_canvas):
+            if opaque == 0 and not allow_empty_frames:
+                raise AssertionError(f"{path.name}: frame {index} is unexpectedly empty")
+            if transparent == 0 and not allow_opaque_canvas:
                 raise AssertionError(f"{path.name}: frame {index} lacks mixed alpha coverage")
             corners = (alpha.getpixel((0, 0)), alpha.getpixel((alpha.width - 1, 0)), alpha.getpixel((0, alpha.height - 1)), alpha.getpixel((alpha.width - 1, alpha.height - 1)))
             if any(corners) and not allow_opaque_canvas:
@@ -468,6 +448,8 @@ def validate_animation(record: dict[str, object]) -> dict[str, object]:
                 f"{path.name}: duration sequence changed from "
                 f"{record['expected_durations']} to {durations}"
             )
+        if not any(opaque_counts):
+            raise AssertionError(f"{path.name}: animation contains no visible pixels")
 
     output_bytes = path.stat().st_size
     if output_bytes <= 0 or output_bytes > 2_000_000:

@@ -79,6 +79,10 @@ La compilación usa rutas relativas (`base: "./"`), así que el mismo `dist/` ta
 - TikTok, Instagram, Sonic, Shadow y las demás marcas mencionadas pertenecen a sus respectivos titulares.
 - Antes de redistribuir el proyecto, verifica que cuentas con permiso o una licencia compatible para cada GIF, icono y recurso visual incluido.
 
+## Recurso de marca
+
+El portal animado de la cabecera procede de [Pixel Magic Effects de Foozle](https://foozlecc.itch.io/pixel-magic-sprite-effects) y se distribuye bajo licencia [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). El GIF se guarda localmente para no depender de recursos externos en producción.
+
 ## Roadmap orientativo
 
 - Reforzar la accesibilidad y el feedback ante errores del proveedor.
