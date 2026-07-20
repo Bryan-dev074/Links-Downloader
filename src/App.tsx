@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { LinkForm } from './components/LinkForm'
+import { LoadingIntro } from './components/LoadingIntro'
 import { ResultPanel } from './components/ResultPanel'
 import { SiteHeader } from './components/SiteHeader'
 import { SpriteStage, type StageState } from './components/SpriteStage'
+import { useReducedMotion } from './hooks/useReducedMotion'
 import {
   buildDownloadFilename,
   downloadVariant,
@@ -28,6 +30,8 @@ function messageForError(error: unknown): string {
 }
 
 export function App() {
+  const reducedMotion = useReducedMotion()
+  const [introComplete, setIntroComplete] = useState(reducedMotion)
   const [input, setInput] = useState('')
   const [media, setMedia] = useState<ResolvedMedia | null>(null)
   const [loading, setLoading] = useState(false)
@@ -35,8 +39,14 @@ export function App() {
   const [toast, setToast] = useState<ToastMessage>()
   const [downloadProgress, setDownloadProgress] = useState<Record<string, number | null>>({})
   const activeRequest = useRef<AbortController | null>(null)
+  const showIntro = !reducedMotion && !introComplete
+  const handleIntroComplete = useCallback(() => setIntroComplete(true), [])
 
   useEffect(() => () => activeRequest.current?.abort(), [])
+
+  useEffect(() => {
+    if (reducedMotion) setIntroComplete(true)
+  }, [reducedMotion])
 
   useEffect(() => {
     if (!toast) return undefined
@@ -147,56 +157,63 @@ export function App() {
   }
 
   return (
-    <div className="app">
-      <span className="ambient-rune" aria-hidden="true" />
-      <span className="ambient-rune" aria-hidden="true" />
-      <span className="ambient-rune" aria-hidden="true" />
-      <SiteHeader />
-      <main className="main-shell">
-        <section className="quest-card" aria-labelledby="page-title">
-          <SpriteStage state={stageState} compact={Boolean(media)} />
-          <div className="hero-copy">
-            <p className="eyebrow portal-kicker">
-              <span className="portal-kicker-rune" aria-hidden="true" />
-              <span>Portal multimedia</span>
-              <span className="portal-kicker-divider" aria-hidden="true" />
-              <span>Calidad máxima</span>
-              <span className="portal-kicker-spark" aria-hidden="true" />
-            </p>
-            <h1 id="page-title" className="hero-title">Tu enlace. Su <span className="gold-word">mejor versión.</span></h1>
-            <p className="hero-description">
-              Pega un enlace público. Encontramos la mayor calidad disponible y la dejamos arriba, lista para descargar.
-            </p>
+    <>
+      {showIntro ? <LoadingIntro onComplete={handleIntroComplete} /> : null}
+      <div
+        className={`app${showIntro ? ' is-intro-covered' : ''}`}
+        aria-hidden={showIntro || undefined}
+        inert={showIntro || undefined}
+      >
+        <span className="ambient-rune" aria-hidden="true" />
+        <span className="ambient-rune" aria-hidden="true" />
+        <span className="ambient-rune" aria-hidden="true" />
+        <SiteHeader />
+        <main className="main-shell">
+          <section className="quest-card" aria-labelledby="page-title">
+            <SpriteStage state={stageState} compact={Boolean(media)} />
+            <div className="hero-copy">
+              <p className="eyebrow portal-kicker">
+                <span className="portal-kicker-rune" aria-hidden="true" />
+                <span>Portal multimedia</span>
+                <span className="portal-kicker-divider" aria-hidden="true" />
+                <span>Calidad máxima</span>
+                <span className="portal-kicker-spark" aria-hidden="true" />
+              </p>
+              <h1 id="page-title" className="hero-title">Tu enlace. Su <span className="gold-word">mejor versión.</span></h1>
+              <p className="hero-description">
+                Pega un enlace público. Encontramos la mayor calidad disponible y la dejamos arriba, lista para descargar.
+              </p>
+            </div>
+            <LinkForm
+              input={input}
+              loading={loading}
+              error={error}
+              onInputChange={handleInputChange}
+              onPaste={handlePaste}
+              onSubmit={handleSubmit}
+            />
+          </section>
+          {media ? (
+            <ResultPanel
+              media={media}
+              downloadProgress={downloadProgress}
+              onDownload={handleDownload}
+            />
+          ) : null}
+        </main>
+        <footer className="site-footer">
+          <strong>Links Downloader</strong> no está afiliado a TikTok ni Instagram. Solo procesa enlaces públicos y no almacena archivos.
+        </footer>
+        {toast ? (
+          <div
+            className={`toast is-${toast.tone}`}
+            role={toast.tone === 'error' ? 'alert' : 'status'}
+            aria-live={toast.tone === 'error' ? 'assertive' : 'polite'}
+          >
+            {toast.message}
           </div>
-          <LinkForm
-            input={input}
-            loading={loading}
-            error={error}
-            onInputChange={handleInputChange}
-            onPaste={handlePaste}
-            onSubmit={handleSubmit}
-          />
-        </section>
-        {media ? (
-          <ResultPanel
-            media={media}
-            downloadProgress={downloadProgress}
-            onDownload={handleDownload}
-          />
         ) : null}
-      </main>
-      <footer className="site-footer">
-        <strong>Links Downloader</strong> no está afiliado a TikTok ni Instagram. Solo procesa enlaces públicos y no almacena archivos.
-      </footer>
-      {toast ? (
-        <div
-          className={`toast is-${toast.tone}`}
-          role={toast.tone === 'error' ? 'alert' : 'status'}
-          aria-live={toast.tone === 'error' ? 'assertive' : 'polite'}
-        >
-          {toast.message}
-        </div>
-      ) : null}
-    </div>
+      </div>
+    </>
   )
 }
