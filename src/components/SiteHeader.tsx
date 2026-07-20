@@ -8,10 +8,17 @@ export function SiteHeader() {
           <span className="brand-tagline">La bóveda de tus enlaces</span>
         </span>
       </div>
-      <span className="provider-badge">
-        <span className="provider-badge-dot" aria-hidden="true" />
-        TikTok + Instagram
-      </span>
+      <a
+        className="creator-badge"
+        href="https://github.com/Bryan-dev074"
+        target="_blank"
+        rel="noreferrer"
+        aria-label="Creado por Bryan-dev074 · Abrir perfil de GitHub"
+      >
+        <span className="creator-badge-rune" aria-hidden="true" />
+        <span className="creator-badge-label">Creado por</span>
+        <span className="creator-badge-name">Bryan-dev074</span>
+      </a>
     </header>
   )
 }
