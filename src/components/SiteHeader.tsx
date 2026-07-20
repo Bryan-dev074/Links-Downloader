@@ -18,6 +18,7 @@ export function SiteHeader() {
         <span className="creator-badge-rune" aria-hidden="true" />
         <span className="creator-badge-label">Creado por</span>
         <span className="creator-badge-name">Bryan-dev074</span>
+        <span className="creator-badge-shine" aria-hidden="true" />
       </a>
     </header>
   )

@@ -204,6 +204,7 @@ a:focus-visible {
 }
 
 .creator-badge {
+  position: relative;
   display: grid;
   min-height: 34px;
   grid-template-columns: 7px auto;
@@ -211,19 +212,53 @@ a:focus-visible {
   align-items: center;
   gap: 1px 7px;
   padding: 5px 10px;
-  border: 1px solid rgba(214, 170, 74, 0.34);
+  overflow: hidden;
+  border: 0;
   color: var(--bone-dim);
-  background: rgba(214, 170, 74, 0.055);
+  background: var(--gold-dark);
+  box-shadow: 0 5px 18px rgba(0, 0, 0, 0.24);
   font-family: 'IBM Plex Mono', monospace;
+  isolation: isolate;
   line-height: 1;
   text-decoration: none;
   white-space: nowrap;
-  transition: border-color 150ms ease, background-color 150ms ease, transform 150ms ease;
+  clip-path: polygon(0 4px, 4px 4px, 4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) calc(100% - 4px), calc(100% - 4px) 100%, 0 100%);
+  transition: filter 150ms ease, transform 150ms ease;
+}
+
+.creator-badge::before {
+  position: absolute;
+  z-index: -2;
+  inset: -110%;
+  content: '';
+  background: conic-gradient(
+    from 0turn,
+    rgba(214, 170, 74, 0.2),
+    var(--gold-bright) 11%,
+    rgba(146, 119, 215, 0.72) 20%,
+    rgba(214, 170, 74, 0.18) 36%,
+    var(--gold) 55%,
+    rgba(146, 119, 215, 0.5) 72%,
+    rgba(214, 170, 74, 0.2)
+  );
+  animation: creator-border-orbit 4.4s linear infinite;
+  transform: translateZ(0) rotate(0turn);
+  will-change: transform;
+}
+
+.creator-badge::after {
+  position: absolute;
+  z-index: -1;
+  inset: 1px;
+  content: '';
+  background:
+    radial-gradient(circle at 12% 50%, rgba(214, 170, 74, 0.13), transparent 38%),
+    linear-gradient(180deg, #1d1827, #120f19);
+  clip-path: inherit;
 }
 
 .creator-badge:hover {
-  border-color: rgba(241, 212, 119, 0.7);
-  background: rgba(214, 170, 74, 0.1);
+  filter: brightness(1.12);
   transform: translateY(-1px);
 }
 
@@ -232,11 +267,15 @@ a:focus-visible {
   height: 6px;
   grid-row: 1 / -1;
   background: var(--gold);
-  box-shadow: 0 0 0 2px rgba(214, 170, 74, 0.12);
+  box-shadow: 0 0 0 2px rgba(214, 170, 74, 0.15), 0 0 9px rgba(241, 212, 119, 0.5);
+  animation: creator-rune-pulse 1.65s ease-in-out infinite;
   transform: rotate(45deg);
+  will-change: opacity, transform;
 }
 
 .creator-badge-label {
+  position: relative;
+  z-index: 1;
   align-self: end;
   color: #9d929f;
   font-size: 7px;
@@ -246,11 +285,29 @@ a:focus-visible {
 }
 
 .creator-badge-name {
+  position: relative;
+  z-index: 1;
   align-self: start;
   color: var(--gold-bright);
   font-size: 9px;
   font-weight: 500;
   letter-spacing: 0.025em;
+  text-shadow: 0 0 8px rgba(241, 212, 119, 0.2);
+}
+
+.creator-badge-shine {
+  position: absolute;
+  z-index: 0;
+  top: -30%;
+  bottom: -30%;
+  left: 0;
+  width: 28%;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(255, 238, 177, 0.2), transparent);
+  animation: creator-shine 3.1s linear infinite;
+  backface-visibility: hidden;
+  transform: translate3d(-180%, 0, 0) skewX(-18deg);
+  will-change: transform;
 }
 
 .creator-badge:active {
@@ -258,7 +315,7 @@ a:focus-visible {
 }
 
 .creator-badge:focus-visible {
-  border-color: var(--gold-bright);
+  box-shadow: 0 0 0 2px rgba(241, 212, 119, 0.62), 0 5px 18px rgba(0, 0, 0, 0.24);
 }
 
 .main-shell {
@@ -1166,6 +1223,20 @@ a:focus-visible {
 
 @keyframes legendary-border {
   to { transform: translateZ(0) rotate(1turn); }
+}
+
+@keyframes creator-border-orbit {
+  to { transform: translateZ(0) rotate(1turn); }
+}
+
+@keyframes creator-rune-pulse {
+  0%, 100% { opacity: 0.66; transform: rotate(45deg) scale(0.82); }
+  50% { opacity: 1; transform: rotate(45deg) scale(1.14); }
+}
+
+@keyframes creator-shine {
+  from { transform: translate3d(-180%, 0, 0) skewX(-18deg); }
+  to { transform: translate3d(520%, 0, 0) skewX(-18deg); }
 }
 
 @keyframes loot-shine {
