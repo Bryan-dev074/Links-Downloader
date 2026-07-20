@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" shape-rendering="crispEdges">
+  <title>Pixel art sword cursor</title>
+  <polygon fill="#080611" points="1,1 7,2 21,16 24,13 27,16 23,20 29,26 29,29 26,29 20,23 16,27 13,24 16,21 2,7"/>
+  <polygon fill="#9b91a7" points="3,3 6,4 19,17 17,19 4,6"/>
+  <polygon fill="#f2ebdd" points="3,3 6,4 18,16 17,17 5,5"/>
+  <polygon fill="#d6aa4a" points="20,15 25,20 23,22 18,17"/>
+  <polygon fill="#9277d7" points="21,21 23,19 28,25 26,27"/>
+  <rect fill="#d6aa4a" x="26" y="26" width="3" height="3"/>
+  <rect fill="#fff4c2" x="26" y="26" width="1" height="1"/>
+</svg>
