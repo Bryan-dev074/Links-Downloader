@@ -340,44 +340,45 @@ def build_animation(spec: AnimationSpec) -> dict[str, object]:
 
 
 def _base_mark() -> Image.Image:
-    """Draw a tiny RPG shield carrying a luminous L rune on a 16 px grid."""
+    """Draw the Links Downloader portal-and-arrow mark on a 16 px grid."""
 
     image = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
     outline = "#090611"
-    deep_gold = "#76501d"
-    gold = "#d7ad42"
-    violet = "#261a42"
-    violet_light = "#573b80"
-    rune_shadow = "#76572a"
-    rune = "#f1d477"
-    rune_light = "#fff4c2"
+    deep_gold = "#76572a"
+    gold = "#d6aa4a"
+    violet = "#21172f"
+    violet_light = "#654b9f"
+    arrow_shadow = "#56408e"
+    arrow = "#f1d477"
+    arrow_light = "#fff4c2"
 
+    # Octagonal portal: recognizable even at the favicon's native 16 px size.
     draw.polygon(
-        [(2, 2), (5, 1), (8, 2), (11, 1), (14, 2), (14, 8), (12, 12), (8, 15), (4, 12), (2, 8)],
+        [(5, 0), (10, 0), (15, 5), (15, 10), (10, 15), (5, 15), (0, 10), (0, 5)],
         fill=outline,
     )
     draw.polygon(
-        [(3, 3), (5, 2), (8, 3), (11, 2), (13, 3), (13, 8), (11, 11), (8, 14), (5, 11), (3, 8)],
+        [(5, 1), (10, 1), (14, 5), (14, 10), (10, 14), (5, 14), (1, 10), (1, 5)],
         fill=deep_gold,
     )
     draw.polygon(
-        [(4, 4), (6, 3), (8, 4), (10, 3), (12, 4), (12, 8), (10, 10), (8, 13), (6, 10), (4, 8)],
+        [(6, 2), (9, 2), (13, 6), (13, 9), (9, 13), (6, 13), (2, 9), (2, 6)],
         fill=violet,
     )
-    draw.polygon([(4, 4), (6, 3), (6, 10), (8, 13), (6, 10), (4, 8)], fill=violet_light)
-    draw.point([(5, 5), (5, 7), (10, 4), (11, 7)], fill="#8a69b4")
+    draw.polygon([(3, 6), (6, 3), (6, 12), (3, 9)], fill=violet_light)
+    draw.point([(4, 5), (11, 5), (3, 8), (12, 8)], fill="#9277d7")
 
-    # Two-tone block rune: a warm legendary-gold face and dark extrusion.
-    draw.rectangle((7, 5, 9, 10), fill=rune_shadow)
-    draw.rectangle((8, 9, 11, 11), fill=rune_shadow)
-    draw.rectangle((6, 4, 8, 9), fill=rune)
-    draw.rectangle((7, 8, 10, 10), fill=rune)
-    draw.line([(6, 4), (7, 4), (7, 8), (10, 8)], fill=rune_light, width=1)
+    # A download arrow crosses the portal; its one-pixel extrusion keeps the
+    # symbol readable instead of becoming another letter-shaped monogram.
+    draw.rectangle((7, 4, 9, 9), fill=arrow_shadow)
+    draw.polygon([(5, 8), (11, 8), (8, 12)], fill=arrow_shadow)
+    draw.rectangle((6, 3, 8, 8), fill=arrow)
+    draw.polygon([(4, 7), (10, 7), (7, 11)], fill=arrow)
+    draw.line([(6, 3), (7, 3), (7, 7), (9, 7)], fill=arrow_light, width=1)
 
-    # A restrained gold glint keeps the mark legible against near-black UI.
-    draw.point((3, 3), fill="#ffe69a")
-    draw.point((12, 3), fill=gold)
+    draw.point((4, 2), fill="#ffe69a")
+    draw.point((11, 2), fill=gold)
     return image
 
 

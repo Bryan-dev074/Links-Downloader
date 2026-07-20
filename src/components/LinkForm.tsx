@@ -1,5 +1,6 @@
 import type { FormEvent } from 'react'
 import { PixelIcon } from './PixelIcon'
+import { TrustSignals } from './TrustSignals'
 
 interface LinkFormProps {
   error?: string
@@ -36,18 +37,24 @@ export function LinkForm({
   return (
     <form className="link-form" onSubmit={onSubmit} noValidate>
       <label className="field-label" htmlFor="media-url">
-        Enlace de TikTok o Instagram
-        <span className="field-hint">Contenido público</span>
+        Enlace de la publicación
+        <span className="field-hint">Contenido público compatible</span>
       </label>
-      <div className={`input-shell${error ? ' has-error' : ''}`}>
-        <PixelIcon className="input-icon" name="link" />
+      <p id="link-helper" className="sr-only">
+        Pega un enlace público compatible. Actualmente puedes usar enlaces de TikTok e Instagram.
+      </p>
+      <div className={`input-shell${error ? ' has-error' : ''}${input.trim() ? ' is-filled' : ''}`}>
+        <span className="input-beacon" aria-hidden="true">
+          <PixelIcon name="clipboard" />
+          <span className="input-beacon-packet" />
+        </span>
         <input
           id="media-url"
           className="link-input"
           type="url"
           value={input}
           onChange={(event) => onInputChange(event.currentTarget.value)}
-          placeholder="Pega un enlace de TikTok o Instagram"
+          placeholder="Pega tu enlace"
           autoCapitalize="none"
           autoComplete="off"
           autoCorrect="off"
@@ -55,7 +62,7 @@ export function LinkForm({
           inputMode="url"
           spellCheck={false}
           aria-invalid={Boolean(error)}
-          aria-describedby={error ? 'link-error' : 'form-privacy'}
+          aria-describedby={error ? 'link-helper link-error' : 'link-helper'}
           disabled={loading}
         />
         <button className="paste-button" type="button" onClick={onPaste} disabled={loading}>
@@ -79,13 +86,7 @@ export function LinkForm({
           {LOADER_SEGMENTS.map((segment) => <span key={segment} />)}
         </div>
       ) : null}
-      <p id="form-privacy" className="trust-row">
-        <span>Sin registro</span>
-        <span className="trust-divider" aria-hidden="true" />
-        <span>No guardamos el enlace</span>
-        <span className="trust-divider" aria-hidden="true" />
-        <span>Optimizado para móvil</span>
-      </p>
+      <TrustSignals />
     </form>
   )
 }

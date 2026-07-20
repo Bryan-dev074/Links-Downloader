@@ -9,11 +9,11 @@ interface SpriteStageProps {
 }
 
 const STATE_LABELS: Record<StageState, string> = {
-  idle: 'Esperando un enlace',
-  ready: 'Enlace listo',
-  loading: 'Buscando la mejor calidad',
-  success: 'Recompensa encontrada',
-  error: 'La misión necesita otro enlace',
+  idle: 'Portal listo · pega un enlace',
+  ready: 'Enlace detectado · listo',
+  loading: 'Rastreando calidad máxima',
+  success: 'Mejor versión encontrada',
+  error: 'Revisa el enlace e inténtalo',
 }
 
 const THEME_ASSETS: Record<SpriteTheme, Record<StageState, string>> = {
@@ -59,9 +59,14 @@ export function SpriteStage({ state, compact = false }: SpriteStageProps) {
     >
       <div className="sprite-portal" aria-hidden="true" />
       <img key={`${PAGE_SPRITE_THEME}-${state}-${extension}`} className="sprite-image" src={src} alt="" />
-      <span className={`sprite-status is-${state}`} role="status" aria-live="polite">
+      <span className={`sprite-status is-${state}`} role="status" aria-live="polite" aria-atomic="true">
         <span className="sprite-status-dot" aria-hidden="true" />
-        {label}
+        <span className="sprite-status-text">{label}</span>
+        <span className="sprite-status-flow" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+        </span>
       </span>
     </div>
   )

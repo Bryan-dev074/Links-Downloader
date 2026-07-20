@@ -156,7 +156,13 @@ export function App() {
         <section className="quest-card" aria-labelledby="page-title">
           <SpriteStage state={stageState} compact={Boolean(media)} />
           <div className="hero-copy">
-            <p className="eyebrow">Misión de descarga · TikTok + Instagram</p>
+            <p className="eyebrow portal-kicker">
+              <span className="portal-kicker-rune" aria-hidden="true" />
+              <span>Portal multimedia</span>
+              <span className="portal-kicker-divider" aria-hidden="true" />
+              <span>Calidad máxima</span>
+              <span className="portal-kicker-spark" aria-hidden="true" />
+            </p>
             <h1 id="page-title" className="hero-title">Tu enlace. Su <span className="gold-word">mejor versión.</span></h1>
             <p className="hero-description">
               Pega un enlace público. Encontramos la mayor calidad disponible y la dejamos arriba, lista para descargar.
