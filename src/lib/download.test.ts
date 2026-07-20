@@ -92,6 +92,18 @@ describe('descarga cross-origin', () => {
     expect(clickMock).toHaveBeenCalledOnce()
   })
 
+  it('evita cargar videos grandes completos en la memoria del teléfono', async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+    const openMock = vi.spyOn(window, 'open').mockReturnValue({ opener: null } as Window)
+    const largeVariant = { ...VIDEO_VARIANT, sizeBytes: 100 * 1024 * 1024 }
+
+    const result = await downloadVariant(largeVariant, { fetchImpl: fetchMock })
+
+    expect(result.method).toBe('direct')
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(openMock).toHaveBeenCalledOnce()
+  })
+
   it('no abre otra pestaña cuando el usuario cancela', async () => {
     const controller = new AbortController()
     controller.abort()

@@ -8,6 +8,7 @@ import { LinksDownloaderError } from './errors'
 import { createRequestSignal } from './request'
 
 const DEFAULT_DOWNLOAD_TIMEOUT_MS = 120_000
+const MAX_BLOB_DOWNLOAD_BYTES = 96 * 1024 * 1024
 const MAX_FILENAME_BASE_LENGTH = 96
 const WINDOWS_RESERVED_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i
 
@@ -181,6 +182,15 @@ export async function downloadVariant(
   )
 
   try {
+    if (
+      fallbackToDirect
+      && variant.sizeBytes !== undefined
+      && variant.sizeBytes > MAX_BLOB_DOWNLOAD_BYTES
+    ) {
+      openDirectUrl(url)
+      return { method: 'direct', filename }
+    }
+
     const response = await (options.fetchImpl ?? fetch)(url, {
       method: 'GET',
       mode: 'cors',
@@ -192,6 +202,21 @@ export async function downloadVariant(
         'DOWNLOAD_FAILED',
         `El archivo respondió con el estado ${response.status}.`,
       )
+    }
+
+    const declaredBytes = Number(response.headers.get('content-length'))
+    if (
+      fallbackToDirect
+      && Number.isFinite(declaredBytes)
+      && declaredBytes > MAX_BLOB_DOWNLOAD_BYTES
+    ) {
+      try {
+        await response.body?.cancel()
+      } catch {
+        // La apertura directa sigue siendo segura aunque el stream ya haya finalizado.
+      }
+      openDirectUrl(url)
+      return { method: 'direct', filename }
     }
 
     const { blob, bytes } = await responseToBlob(response, variant, options)

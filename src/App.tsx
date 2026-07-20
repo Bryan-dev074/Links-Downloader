@@ -12,6 +12,11 @@ import {
 } from './lib'
 import type { DownloadVariant, ResolvedMedia } from './types'
 
+interface ToastMessage {
+  message: string
+  tone: 'error' | 'success'
+}
+
 function messageForError(error: unknown): string {
   if (error instanceof LinksDownloaderError) {
     if (error.code === 'TIMEOUT') return 'La búsqueda tardó demasiado. Espera unos segundos e inténtalo otra vez.'
@@ -27,7 +32,7 @@ export function App() {
   const [media, setMedia] = useState<ResolvedMedia | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>()
-  const [toast, setToast] = useState<string>()
+  const [toast, setToast] = useState<ToastMessage>()
   const [downloadProgress, setDownloadProgress] = useState<Record<string, number | null>>({})
   const activeRequest = useRef<AbortController | null>(null)
 
@@ -113,7 +118,8 @@ export function App() {
   }
 
   async function handleDownload(variant: DownloadVariant) {
-    if (!media || downloadProgress[variant.id] !== undefined) return
+    if (!media || Object.keys(downloadProgress).length > 0) return
+    setToast(undefined)
     setDownloadProgress((current) => ({ ...current, [variant.id]: null }))
 
     try {
@@ -123,9 +129,14 @@ export function App() {
           setDownloadProgress((current) => ({ ...current, [variant.id]: percent ?? null }))
         },
       })
-      setToast(result.method === 'blob' ? 'Tu descarga comenzó.' : 'Abrimos el archivo directo para que puedas guardarlo.')
+      setToast({
+        message: result.method === 'blob'
+          ? 'Tu descarga comenzó.'
+          : 'Abrimos el archivo directo para que puedas guardarlo.',
+        tone: 'success',
+      })
     } catch (downloadError) {
-      setError(messageForError(downloadError))
+      setToast({ message: messageForError(downloadError), tone: 'error' })
     } finally {
       setDownloadProgress((current) => {
         const next = { ...current }
@@ -171,7 +182,15 @@ export function App() {
       <footer className="site-footer">
         <strong>Links Downloader</strong> no está afiliado a TikTok. Solo procesa enlaces públicos y no almacena videos.
       </footer>
-      {toast ? <div className="toast" role="status" aria-live="polite">{toast}</div> : null}
+      {toast ? (
+        <div
+          className={`toast is-${toast.tone}`}
+          role={toast.tone === 'error' ? 'alert' : 'status'}
+          aria-live={toast.tone === 'error' ? 'assertive' : 'polite'}
+        >
+          {toast.message}
+        </div>
+      ) : null}
     </div>
   )
 }

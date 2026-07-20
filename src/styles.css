@@ -483,13 +483,13 @@ a:focus-visible {
 }
 
 .link-input::placeholder {
-  color: #716878;
+  color: #93899a;
   opacity: 1;
 }
 
 .paste-button {
   min-width: 62px;
-  min-height: 42px;
+  min-height: 44px;
   padding: 0 12px;
   border: 1px solid rgba(242, 235, 221, 0.11);
   color: var(--bone-dim);
@@ -654,7 +654,7 @@ a:focus-visible {
   gap: 6px;
   color: #b7d4b4;
   font-family: 'IBM Plex Mono', monospace;
-  font-size: 8px;
+  font-size: 9px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -714,7 +714,7 @@ a:focus-visible {
   color: var(--bone);
   background: rgba(8, 7, 12, 0.88);
   font-family: 'IBM Plex Mono', monospace;
-  font-size: 8px;
+  font-size: 9px;
 }
 
 .video-author {
@@ -745,7 +745,7 @@ a:focus-visible {
   padding: 0;
   color: #918697;
   font-family: 'IBM Plex Mono', monospace;
-  font-size: 8px;
+  font-size: 9px;
   list-style: none;
   text-transform: uppercase;
 }
@@ -786,6 +786,14 @@ a:focus-visible {
   content: '';
   background: conic-gradient(from 0deg, transparent 0 32%, var(--gold-bright) 36% 39%, transparent 43% 82%, var(--gold) 86% 89%, transparent 93%);
   animation: legendary-border 3.8s steps(16, end) infinite;
+}
+
+.legendary-slot:focus-within .legendary-button {
+  box-shadow: inset 0 0 0 2px var(--gold-bright);
+}
+
+.legendary-button:focus-visible {
+  outline: 0;
 }
 
 .legendary-button {
@@ -992,14 +1000,14 @@ a:focus-visible {
 .variant-meta {
   color: #8f8494;
   font-family: 'IBM Plex Mono', monospace;
-  font-size: 8px;
+  font-size: 9px;
   letter-spacing: 0.03em;
   text-transform: uppercase;
 }
 
 .variant-download {
   min-width: 88px;
-  min-height: 40px;
+  min-height: 44px;
   padding: 0 11px;
   border: 1px solid rgba(146, 119, 215, 0.3);
   color: #d7c9f4;
@@ -1019,7 +1027,7 @@ a:focus-visible {
 .source-note {
   margin: 13px 0 0;
   color: #8f8494;
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.5;
 }
 
@@ -1059,18 +1067,28 @@ a:focus-visible {
   transform: rotate(45deg);
 }
 
+.toast.is-error {
+  border-color: rgba(217, 104, 114, 0.5);
+  color: #f1c3c7;
+  background: rgba(37, 17, 24, 0.97);
+}
+
+.toast.is-error::before {
+  background: var(--ember);
+}
+
 .site-footer {
   width: min(100%, 680px);
   margin: 0 auto;
   padding: 0 0 max(18px, env(safe-area-inset-bottom));
-  color: #706777;
-  font-size: 10px;
+  color: #a59aa9;
+  font-size: 11px;
   line-height: 1.55;
   text-align: center;
 }
 
 .site-footer strong {
-  color: #968b9a;
+  color: #c1b6c4;
   font-weight: 500;
 }
 
@@ -1134,7 +1152,7 @@ a:focus-visible {
 
   .provider-badge {
     padding: 0 8px;
-    font-size: 8px;
+    font-size: 9px;
   }
 
   .quest-card {
@@ -1205,7 +1223,7 @@ a:focus-visible {
   .variant-download {
     min-width: 72px;
     padding: 0 8px;
-    font-size: 8px;
+    font-size: 9px;
   }
 }
 
@@ -1225,7 +1243,7 @@ a:focus-visible {
 
   .trust-row {
     gap: 5px;
-    font-size: 8px;
+    font-size: 9px;
   }
 }
 

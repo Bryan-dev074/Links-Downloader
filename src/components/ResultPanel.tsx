@@ -47,6 +47,7 @@ export function ResultPanel({ downloadProgress, media, onDownload }: ResultPanel
 
   const otherVariants = media.variants.filter((variant) => variant.id !== bestVariant.id)
   const duration = formatDuration(media.durationSeconds)
+  const anyDownloading = Object.keys(downloadProgress).length > 0
   const bestProgress = downloadProgress[bestVariant.id]
   const bestDownloading = bestProgress !== undefined
   const bestPercent = typeof bestProgress === 'number' ? Math.round(bestProgress) : undefined
@@ -87,7 +88,7 @@ export function ResultPanel({ downloadProgress, media, onDownload }: ResultPanel
           className="legendary-button"
           type="button"
           onClick={() => onDownload(bestVariant)}
-          disabled={bestDownloading}
+          disabled={anyDownloading}
           aria-label={`Descargar mejor calidad: ${bestVariant.label}`}
         >
           <span className="legendary-icon"><PixelIcon name="gem" /></span>
@@ -130,7 +131,7 @@ export function ResultPanel({ downloadProgress, media, onDownload }: ResultPanel
                     className="variant-download"
                     type="button"
                     onClick={() => onDownload(variant)}
-                    disabled={downloading}
+                    disabled={anyDownloading}
                   >
                     {downloading && typeof progress === 'number' ? `${Math.round(progress)}%` : downloading ? 'Abriendo…' : 'Descargar'}
                   </button>
